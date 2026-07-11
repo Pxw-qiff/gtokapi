@@ -1,0 +1,15 @@
+# 服务器本地构建方案，不依赖 GHCR，避免 PAT 权限问题
+services:
+  grok2api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: grok2api:local
+    container_name: grok2api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
