@@ -12,9 +12,6 @@ permissions:
   contents: read
   packages: write
 
-env:
-  GHCR_REPO: ghcr.io/${{ github.repository }}
-
 jobs:
   docker:
     runs-on: ubuntu-latest
@@ -30,6 +27,13 @@ jobs:
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           echo "tag=v${version}" >> "${GITHUB_OUTPUT}"
           echo "sha_short=${GITHUB_SHA::12}" >> "${GITHUB_OUTPUT}"
+          repo_lower="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          echo "repo_lower=${repo_lower}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set image repository
+        id: repo
+        shell: bash
+        run: echo "ghcr_repo=ghcr.io/${{ steps.version.outputs.repo_lower }}" >> "${GITHUB_OUTPUT}"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -53,9 +57,9 @@ jobs:
           push: true
           provenance: false
           tags: |
-            ${{ env.GHCR_REPO }}:latest
-            ${{ env.GHCR_REPO }}:${{ steps.version.outputs.version }}
-            ${{ env.GHCR_REPO }}:${{ steps.version.outputs.tag }}
-            ${{ env.GHCR_REPO }}:${{ steps.version.outputs.sha_short }}
+            ${{ steps.repo.outputs.ghcr_repo }}:latest
+            ${{ steps.repo.outputs.ghcr_repo }}:${{ steps.version.outputs.version }}
+            ${{ steps.repo.outputs.ghcr_repo }}:${{ steps.version.outputs.tag }}
+            ${{ steps.repo.outputs.ghcr_repo }}:${{ steps.version.outputs.sha_short }}
           cache-from: type=gha,scope=${{ github.ref_name }}
           cache-to: type=gha,mode=max,scope=${{ github.ref_name }}
