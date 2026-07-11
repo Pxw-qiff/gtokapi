@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grok2API 管理面板</title>
+<style>
+:root{--bg:#0f1117;--card:#1a1d29;--border:#2a2d3a;--text:#e4e6eb;--text2:#8b8fa3;--accent:#4f7cff;--accent2:#22c55e;--warn:#f59e0b;--danger:#ef4444;--radius:8px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+/* 登录页 */
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh}
+.login-box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:40px;width:360px}
+.login-box h1{text-align:center;font-size:20px;margin-bottom:24px}
+.login-box input{width:100%;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px;margin-bottom:14px}
+.login-box button{width:100%;padding:12px;background:var(--accent);border:none;border-radius:var(--radius);color:#fff;font-size:14px;cursor:pointer;transition:.2s}
+.login-box button:hover{opacity:.85}
+.login-err{color:var(--danger);font-size:12px;text-align:center;margin-top:8px;display:none}
+/* 主布局 */
+#app{display:none;min-height:100vh}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:200px;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 0;z-index:10}
+.sidebar-logo{padding:0 20px 16px;font-size:16px;font-weight:600;border-bottom:1px solid var(--border);margin-bottom:8px}
+.nav-item{padding:10px 20px;cursor:pointer;color:var(--text2);transition:.15s;display:flex;align-items:center;gap:10px;font-size:13px}
+.nav-item:hover{background:var(--bg);color:var(--text)}
+.nav-item.active{background:var(--bg);color:var(--accent);border-right:3px solid var(--accent)}
+.nav-item svg{width:16px;height:16px;flex-shrink:0}
+.sidebar-footer{margin-top:auto;padding:12px 20px;border-top:1px solid var(--border)}
+.logout-btn{color:var(--danger);cursor:pointer;font-size:12px;background:none;border:none}
+.main{margin-left:200px;padding:24px}
+.page{display:none}
+.page.active{display:block}
+.page-title{font-size:18px;font-weight:600;margin-bottom:20px}
+/* 卡片 */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.card-title{font-size:14px;font-weight:600;margin-bottom:14px;color:var(--text)}
+/* 网格 */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:20px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+.stat-label{font-size:12px;color:var(--text2);margin-bottom:6px}
+.stat-value{font-size:24px;font-weight:600}
+.stat-sub{font-size:11px;color:var(--text2);margin-top:4px}
+/* 表格 */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:500;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--border);word-break:break-all}
+tr:hover{background:rgba(255,255,255,.02)}
+/* 按钮 */
+.btn{padding:6px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-size:12px;transition:.15s;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{opacity:.85}
+.btn-danger{color:var(--danger);border-color:var(--danger)}
+.btn-danger:hover{background:var(--danger);color:#fff}
+.btn-sm{padding:3px 8px;font-size:11px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+/* 标签 */
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.tag-active{background:rgba(34,197,94,.15);color:var(--accent2)}
+ tag-cooling{background:rgba(245,158,11,.15);color:var(--warn)}
+.tag-disabled{background:rgba(239,68,68,.15);color:var(--danger)}
+.tag-unauthorized{background:rgba(239,68,68,.1);color:var(--danger)}
+.tag-pool-basic{background:rgba(79,124,255,.15);color:var(--accent)}
+.tag-pool-super{background:rgba(168,85,247,.15);color:#a855f7}
+.tag-pool-heavy{background:rgba(245,158,11,.15);color:var(--warn)}
+/* 输入框 */
+input,textarea,select{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:8px 12px;font-size:13px;font-family:inherit}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
+textarea{resize:vertical;min-height:100px}
+/* 工具栏 */
+.toolbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.toolbar input,.toolbar select{flex:1;min-width:120px}
+/* 弹窗 */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;width:480px;max-width:90vw;max-height:80vh;overflow-y:auto}
+.modal h3{margin-bottom:16px;font-size:16px}
+.modal-field{margin-bottom:12px}
+.modal-field label{display:block;font-size:12px;color:var(--text2);margin-bottom:4px}
+.modal-field input,.modal-field select{width:100%}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+/* Toast */
+#toast{position:fixed;bottom:24px;right:24px;z-index:200;display:flex;flex-direction:column;gap:8px}
+.toast-msg{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 16px;font-size:13px;animation:slideIn .2s;max-width:360px}
+.toast-ok{border-left:3px solid var(--accent2)}
+.toast-err{border-left:3px solid var(--danger)}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:none;opacity:1}}
+/* 进度条 */
+.progress-bar{width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .3s}
+/* JSON 编辑器 */
+.json-editor{width:100%;min-height:400px;font-family:'Fira Code',Consolas,monospace;font-size:12px;line-height:1.5;tab-size:2}
+/* 选项卡 */
+.tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+.tab{padding:8px 16px;cursor:pointer;color:var(--text2);font-size:13px;border-bottom:2px solid transparent;transition:.15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+/* 复选框 */
+.checkbox{display:flex;align-items:center;gap:6px;cursor:pointer}
+.checkbox input{width:auto}
+/* 响应式 */
+@media(max-width:768px){.sidebar{width:60px}.nav-item span{display:none}.main{margin-left:60px}}
+</style>
+</head>
+<body>
+<!-- 登录页 -->
+<div id="login-screen">
+<div class="login-box">
+<h1>🔧 Grok2API 管理面板</h1>
+<input type="password" id="login-key" placeholder="输入管理密钥 (app_key)" onkeydown="if(event.key==='Enter')doLogin()">
+<button onclick="doLogin()">登录</button>
+<div class="login-err" id="login-err">密钥错误，请重试</div>
+</div>
+</div>
+<!-- 主应用 -->
+<div id="app">
+<div class="sidebar">
+<div class="sidebar-logo">🔧 Grok2API</div>
+<div class="nav-item active" onclick="navTo('dashboard')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>仪表盘</span></div>
+<div class="nav-item" onclick="navTo('accounts')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg><span>账号管理</span></div>
+<div class="nav-item" onclick="navTo('config')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>配置管理</span></div>
+<div class="nav-item" onclick="navTo('video')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg><span>视频任务</span></div>
+<div class="nav-item" onclick="navTo('cache')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg><span>缓存管理</span></div>
+<div class="nav-item" onclick="navTo('test')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/></svg><span>API 测试</span></div>
+<div class="sidebar-footer">
+<button class="logout-btn" onclick="doLogout()">退出登录</button>
+</div>
+</div>
+<div class="main">
+<!-- 仪表盘 -->
+<div class="page active" id="page-dashboard">
+<div class="page-title">仪表盘</div>
+<div class="stats-grid" id="dash-stats"></div>
+<div class="card">
+<div class="card-title">账号池分布</div>
+<div id="pool-dist" style="display:flex;gap:12px;flex-wrap:wrap"></div>
+</div>
+<div class="card">
+<div class="card-title">缓存概览</div>
+<div id="dash-cache" style="display:flex;gap:20px;flex-wrap:wrap"></div>
+</div>
+</div>
+<!-- 账号管理 -->
+<div class="page" id="page-accounts">
+<div class="page-title">账号管理</div>
+<div class="toolbar">
+<button class="btn btn-primary" onclick="showAddTokenModal()">+ 添加账号</button>
+<button class="btn" onclick="refreshAllAccounts()">批量刷新</button>
+<button class="btn" onclick="batchNSFW(true)">批量开启NSFW</button>
+<button class="btn btn-danger" onclick="deleteInvalidTokens()">删除失效账号</button>
+<select id="acc-filter-pool" onchange="renderAccounts()" style="width:auto">
+<option value="">全部池</option>
+<option value="basic">basic</option>
+<option value="super">super</option>
+<option value="heavy">heavy</option>
+</select>
+<select id="acc-filter-status" onchange="renderAccounts()" style="width:auto">
+<option value="">全部状态</option>
+<option value="active">active</option>
+<option value="cooling">cooling</option>
+<option value="disabled">disabled</option>
+<option value="unauthorized">unauthorized</option>
+</select>
+<input type="text" id="acc-search" placeholder="搜索 token..." oninput="renderAccounts()">
+</div>
+<div class="card" style="padding:0;overflow:auto">
+<table>
+<thead><tr><th><input type="checkbox" id="acc-select-all" onchange="toggleSelectAll(this)"></th><th>Token</th><th>池</th><th>状态</th><th>额度</th><th>使用次数</th><th>最后使用</th><th>操作</th></tr></thead>
+<tbody id="acc-tbody"></tbody>
+</table>
+</div>
+<div id="acc-batch-bar" style="display:none;margin-top:10px;display:flex;gap:8px;align-items:center">
+<span id="acc-selected-count" style="font-size:12px;color:var(--text2)"></span>
+<button class="btn btn-sm" onclick="batchToggle(true)">启用</button>
+<button class="btn btn-sm" onclick="batchToggle(false)">禁用</button>
+<button class="btn btn-sm" onclick="batchRefresh()">刷新额度</button>
+<button class="btn btn-sm btn-danger" onclick="batchDelete()">删除</button>
+</div>
+</div>
+<!-- 配置管理 -->
+<div class="page" id="page-config">
+<div class="page-title">配置管理</div>
+<div class="toolbar">
+<button class="btn btn-primary" onclick="saveConfig()">保存配置</button>
+<button class="btn" onclick="loadConfig()">重新加载</button>
+</div>
+<div class="card">
+<div class="card-title">config.toml (运行时配置，保存后立即生效)</div>
+<textarea class="json-editor" id="config-editor" spellcheck="false"></textarea>
+</div>
+</div>
+<!-- 视频任务 -->
+<div class="page" id="page-video">
+<div class="page-title">视频任务</div>
+<div class="toolbar">
+<button class="btn" onclick="loadVideoJobs()">刷新</button>
+<span style="font-size:12px;color:var(--text2)">视频任务存储在内存中，重启后清空</span>
+</div>
+<div class="card" style="padding:0;overflow:auto">
+<table>
+<thead><tr><th>任务ID</th><th>状态</th><th>进度</th><th>模型</th><th>提示词</th><th>秒数</th><th>视频URL</th><th>创建时间</th></tr></thead>
+<tbody id="video-tbody"></tbody>
+</table>
+</div>
+</div>
+<!-- 缓存管理 -->
+<div class="page" id="page-cache">
+<div class="page-title">缓存管理</div>
+<div class="stats-grid" id="cache-stats"></div>
+<div class="tabs">
+<div class="tab active" onclick="switchCacheTab('image',this)">图片缓存</div>
+<div class="tab" onclick="switchCacheTab('video',this)">视频缓存</div>
+</div>
+<div class="toolbar">
+<button class="btn btn-danger" onclick="clearCache()">清空当前类型缓存</button>
+<button class="btn" onclick="loadCacheList()">刷新列表</button>
+</div>
+<div class="card" style="padding:0;overflow:auto;max-height:500px">
+<table>
+<thead><tr><th>文件名</th><th>大小</th><th>修改时间</th><th>操作</th></tr></thead>
+<tbody id="cache-tbody"></tbody>
+</table>
+</div>
+</div>
+<!-- API 测试 -->
+<div class="page" id="page-test">
+<div class="page-title">API 测试</div>
+<div class="tabs">
+<div class="tab active" onclick="switchTestTab('chat',this)">聊天</div>
+<div class="tab" onclick="switchTestTab('image',this)">图片生成</div>
+<div class="tab" onclick="switchTestTab('video',this)">视频生成</div>
+</div>
+<div id="test-chat" class="card">
+<div class="card-title">聊天测试</div>
+<div class="toolbar">
+<select id="test-chat-model" style="width:auto">
+<option value="grok-4.20-fast">grok-4.20-fast</option>
+<option value="grok-4.20-auto">grok-4.20-auto</option>
+<option value="grok-4.20-expert">grok-4.20-expert</option>
+<option value="grok-4.3-beta">grok-4.3-beta</option>
+</select>
+<label class="checkbox"><input type="checkbox" id="test-chat-stream" checked> 流式</label>
+</div>
+<textarea id="test-chat-input" placeholder="输入消息..." style="width:100%;min-height:60px;margin-bottom:10px"></textarea>
+<button class="btn btn-primary" onclick="testChat()">发送</button>
+<div id="test-chat-output" style="margin-top:14px;white-space:pre-wrap;font-size:13px;max-height:400px;overflow:auto"></div>
+</div>
+<div id="test-image" class="card" style="display:none">
+<div class="card-title">图片生成测试</div>
+<div class="toolbar">
+<select id="test-img-model" style="width:auto">
+<option value="grok-imagine-image-lite">grok-imagine-image-lite</option>
+<option value="grok-imagine-image">grok-imagine-image</option>
+<option value="grok-imagine-image-pro">grok-imagine-image-pro</option>
+</select>
+</div>
+<textarea id="test-img-input" placeholder="输入图片提示词..." style="width:100%;min-height:60px;margin-bottom:10px"></textarea>
+<button class="btn btn-primary" onclick="testImage()">生成图片</button>
+<div id="test-img-output" style="margin-top:14px"></div>
+</div>
+<div id="test-video" class="card" style="display:none">
+<div class="card-title">视频生成测试（异步）</div>
+<div class="toolbar">
+<select id="test-vid-model" style="width:auto">
+<option value="grok-imagine-video">grok-imagine-video</option>
+</select>
+<label>秒数:</label>
+<select id="test-vid-seconds" style="width:auto">
+<option value="6">6</option>
+<option value="10">10</option>
+<option value="12">12</option>
+<option value="16">16</option>
+<option value="20">20</option>
+</select>
+</div>
+<textarea id="test-vid-input" placeholder="输入视频提示词..." style="width:100%;min-height:60px;margin-bottom:10px"></textarea>
+<button class="btn btn-primary" onclick="testVideo()">提交任务</button>
+<div id="test-vid-output" style="margin-top:14px"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- 弹窗 -->
+<div class="modal-overlay" id="modal-overlay">
+<div class="modal" id="modal-content"></div>
+</div>
+<!-- Toast 容器 -->
+<div id="toast"></div>
+<script>
+// 全局状态
+let ADMIN_KEY='';
+let ACCOUNTS=[];
+let CONFIG_RAW={};
+let CACHE_TAB='image';
+let VIDEO_JOBS=[];
+
+// ========== 工具函数 ==========
+function api(path,opts={}){
+  const headers={'Content-Type':'application/json',...(opts.headers||{})};
+  if(ADMIN_KEY)headers['Authorization']='Bearer '+ADMIN_KEY;
+  return fetch(path,{...opts,headers}).then(async r=>{
+    const txt=await r.text();
+    let data;try{data=JSON.parse(txt)}catch{data=txt}
+    if(!r.ok){
+      const msg=typeof data==='object'&&data?data.message||data.error||JSON.stringify(data):txt;
+      throw new Error(msg||'HTTP '+r.status);
+    }
+    return data;
+  });
+}
+function toast(msg,ok=true){
+  const el=document.createElement('div');
+  el.className='toast-msg '+(ok?'toast-ok':'toast-err');
+  el.textContent=msg;
+  document.getElementById('toast').appendChild(el);
+  setTimeout(()=>el.remove(),4000);
+}
+function fmtTime(ts){
+  if(!ts)return '-';
+  const d=new Date(ts*1000);
+  return d.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+function fmtSize(bytes){
+  if(bytes<1024)return bytes+'B';
+  if(bytes<1048576)return (bytes/1024).toFixed(1)+'KB';
+  return (bytes/1048576).toFixed(1)+'MB';
+}
+function maskToken(t){
+  if(!t||t.length<=20)return t;
+  return t.slice(0,8)+'...'+t.slice(-8);
+}
+function statusTag(s){
+  const cls={'active':'tag-active','cooling':'tag-cooling','disabled':'tag-disabled','unauthorized':'tag-unauthorized'}[s]||'';
+  return `<span class="tag ${cls}">${s}</span>`;
+}
+function poolTag(p){
+  return `<span class="tag tag-pool-${p||'basic'}">${p||'basic'}</span>`;
+}
+function escapeHtml(s){
+  if(!s)return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ========== 登录 ==========
+function doLogin(){
+  const key=document.getElementById('login-key').value.trim();
+  if(!key)return;
+  ADMIN_KEY=key;
+  localStorage.setItem('admin_key',key);
+  api('/admin/api/verify').then(()=>{
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('app').style.display='block';
+    loadDashboard();
+  }).catch(()=>{
+    document.getElementById('login-err').style.display='block';
+    ADMIN_KEY='';
+    localStorage.removeItem('admin_key');
+  });
+}
+function doLogout(){
+  ADMIN_KEY='';
+  localStorage.removeItem('admin_key');
+  location.reload();
+}
+// 自动登录
+(function(){
+  const saved=localStorage.getItem('admin_key');
+  if(saved){
+    ADMIN_KEY=saved;
+    api('/admin/api/verify').then(()=>{
+      document.getElementById('login-screen').style.display='none';
+      document.getElementById('app').style.display='block';
+      loadDashboard();
+    }).catch(()=>{localStorage.removeItem('admin_key')});
+  }
+})();
+
+// ========== 导航 ==========
+function navTo(page){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+page).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if(page==='dashboard')loadDashboard();
+  if(page==='accounts')loadAccounts();
+  if(page==='config')loadConfig();
+  if(page==='video')loadVideoJobs();
+  if(page==='cache')loadCacheStats();
+}
+
+// ========== 仪表盘 ==========
+function loadDashboard(){
+  Promise.all([
+    api('/admin/api/status').catch(()=>null),
+    api('/admin/api/cache').catch(()=>null),
+    api('/admin/api/tokens').catch(()=>null)
+  ]).then(([status,cache,tokens])=>{
+    let html='';
+    if(status){
+      html+=`<div class="stat-card"><div class="stat-label">账号总数</div><div class="stat-value">${status.size||0}</div><div class="stat-sub">${status.selection_strategy||'-'}</div></div>`;
+      html+=`<div class="stat-card"><div class="stat-label">版本号</div><div class="stat-value" style="font-size:16px">${status.revision||'-'}</div></div>`;
+    }
+    if(cache){
+      const img=cache.local_image||{};
+      const vid=cache.local_video||{};
+      html+=`<div class="stat-card"><div class="stat-label">图片缓存</div><div class="stat-value">${img.count||0}</div><div class="stat-sub">${(img.size_mb||0).toFixed(1)}MB</div></div>`;
+      html+=`<div class="stat-card"><div class="stat-label">视频缓存</div><div class="stat-value">${vid.count||0}</div><div class="stat-sub">${(vid.size_mb||0).toFixed(1)}MB</div></div>`;
+    }
+    if(tokens&&tokens.tokens){
+      const pools={basic:0,super:0,heavy:0};
+      const statuses={active:0,cooling:0,disabled:0,unauthorized:0};
+      tokens.tokens.forEach(t=>{
+        pools[t.pool]=(pools[t.pool]||0)+1;
+        statuses[t.status]=(statuses[t.status]||0)+1;
+      });
+      html+=`<div class="stat-card"><div class="stat-label">活跃账号</div><div class="stat-value">${statuses.active||0}</div></div>`;
+      html+=`<div class="stat-card"><div class="stat-label">冷却中</div><div class="stat-value">${statuses.cooling||0}</div></div>`;
+      html+=`<div class="stat-card"><div class="stat-label">已禁用</div><div class="stat-value">${statuses.disabled||0}</div></div>`;
+      // 池分布
+      let poolHtml='';
+      Object.entries(pools).forEach(([k,v])=>{
+        poolHtml+=`<div style="text-align:center"><div class="stat-value" style="font-size:20px">${v}</div><div class="stat-sub">${k}</div></div>`;
+      });
+      document.getElementById('pool-dist').innerHTML=poolHtml;
+    }
+    document.getElementById('dash-stats').innerHTML=html;
+    // 缓存概览
+    if(cache){
+      const img=cache.local_image||{},vid=cache.local_video||{};
+      document.getElementById('dash-cache').innerHTML=`
+        <div><strong>图片:</strong> ${img.count||0} 个, ${(img.size_mb||0).toFixed(1)}MB${img.limited?` (限制 ${img.limit_mb}MB, ${img.usage_percent?.toFixed(0)}%)`:''}</div>
+        <div><strong>视频:</strong> ${vid.count||0} 个, ${(vid.size_mb||0).toFixed(1)}MB${vid.limited?` (限制 ${vid.limit_mb}MB, ${vid.usage_percent?.toFixed(0)}%)`:''}</div>`;
+    }
+  });
+}
+
+// ========== 账号管理 ==========
+function loadAccounts(){
+  api('/admin/api/tokens').then(data=>{
+    ACCOUNTS=data.tokens||[];
+    renderAccounts();
+  }).catch(e=>toast('加载账号失败: '+e.message,false));
+}
+function renderAccounts(){
+  const pool=document.getElementById('acc-filter-pool').value;
+  const status=document.getElementById('acc-filter-status').value;
+  const search=document.getElementById('acc-search').value.toLowerCase();
+  let filtered=ACCOUNTS;
+  if(pool)filtered=filtered.filter(a=>a.pool===pool);
+  if(status)filtered=filtered.filter(a=>a.status===status);
+  if(search)filtered=filtered.filter(a=>a.token.toLowerCase().includes(search));
+  let html='';
+  if(filtered.length===0){
+    html='<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:20px">暂无数据</td></tr>';
+  }
+  filtered.forEach(a=>{
+    let quotaHtml='';
+    if(a.quota){
+      const parts=[];
+      ['auto','fast','expert','heavy'].forEach(k=>{
+        if(a.quota[k])parts.push(`${k}:${a.quota[k].remaining}/${a.quota[k].total}`);
+      });
+      quotaHtml=parts.join('<br>')||'-';
+    }
+    html+=`<tr>
+      <td><input type="checkbox" class="acc-check" value="${escapeHtml(a.token)}"></td>
+      <td title="${escapeHtml(a.token)}">${maskToken(a.token)}</td>
+      <td>${poolTag(a.pool)}</td>
+      <td>${statusTag(a.status)}</td>
+      <td style="font-size:11px">${quotaHtml}</td>
+      <td>${a.use_count||0}</td>
+      <td>${fmtTime(a.last_used_at)}</td>
+      <td>
+        <button class="btn btn-sm" onclick="toggleToken('${escapeHtml(a.token)}',${a.status==='disabled'})">${a.status==='disabled'?'启用':'禁用'}</button>
+        <button class="btn btn-sm" onclick="showEditTokenModal('${escapeHtml(a.token)}','${a.pool}')">编辑</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteToken('${escapeHtml(a.token)}')">删除</button>
+      </td>
+    </tr>`;
+  });
+  document.getElementById('acc-tbody').innerHTML=html;
+  updateBatchBar();
+}
+function toggleSelectAll(cb){
+  document.querySelectorAll('.acc-check').forEach(c=>c.checked=cb.checked);
+  updateBatchBar();
+}
+function getSelectedTokens(){
+  return Array.from(document.querySelectorAll('.acc-check:checked')).map(c=>c.value);
+}
+function updateBatchBar(){
+  const sel=getSelectedTokens();
+  const bar=document.getElementById('acc-batch-bar');
+  if(sel.length>0){
+    bar.style.display='flex';
+    document.getElementById('acc-selected-count').textContent='已选 '+sel.length+' 个';
+  }else{
+    bar.style.display='none';
+  }
+}
+function showAddTokenModal(){
+  showModal(`<h3>添加账号</h3>
+    <div class="modal-field"><label>Token（每行一个）</label><textarea id="add-tokens" rows="6" placeholder="sso=xxx&#10;sso=yyy"></textarea></div>
+    <div class="modal-field"><label>池</label><select id="add-pool"><option value="auto">auto (自动检测)</option><option value="basic">basic</option><option value="super">super</option><option value="heavy">heavy</option></select></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="addTokens()">添加</button></div>`);
+}
+function addTokens(){
+  const tokens=document.getElementById('add-tokens').value.split('\n').map(t=>t.trim()).filter(Boolean);
+  const pool=document.getElementById('add-pool').value;
+  if(!tokens.length)return toast('请输入至少一个token',false);
+  api('/admin/api/tokens/add',{method:'POST',body:JSON.stringify({tokens,pool})}).then(r=>{
+    toast(`添加成功 ${r.count} 个, 跳过 ${r.skipped||0} 个`);
+    closeModal();loadAccounts();loadDashboard();
+  }).catch(e=>toast('添加失败: '+e.message,false));
+}
+function showEditTokenModal(token,pool){
+  showModal(`<h3>编辑账号</h3>
+    <div class="modal-field"><label>Token</label><input type="text" id="edit-token" value="${escapeHtml(token)}"></div>
+    <div class="modal-field"><label>池</label><select id="edit-pool"><option value="basic">basic</option><option value="super">super</option><option value="heavy">heavy</option></select></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="editToken('${escapeHtml(token)}')">保存</button></div>`);
+  document.getElementById('edit-pool').value=pool;
+}
+function editToken(oldToken){
+  const token=document.getElementById('edit-token').value.trim();
+  const pool=document.getElementById('edit-pool').value;
+  api('/admin/api/tokens/edit',{method:'PUT',body:JSON.stringify({old_token:oldToken,token,pool})}).then(()=>{
+    toast('修改成功');closeModal();loadAccounts();
+  }).catch(e=>toast('修改失败: '+e.message,false));
+}
+function deleteToken(token){
+  if(!confirm('确认删除此账号?'))return;
+  api('/admin/api/tokens',{method:'DELETE',body:JSON.stringify([token])}).then(r=>{
+    toast('已删除 '+r.deleted+' 个');loadAccounts();loadDashboard();
+  }).catch(e=>toast('删除失败: '+e.message,false));
+}
+function toggleToken(token,enable){
+  api('/admin/api/tokens/disabled',{method:'POST',body:JSON.stringify({token,disabled:enable})}).then(()=>{
+    toast(enable?'已启用':'已禁用');loadAccounts();
+  }).catch(e=>toast('操作失败: '+e.message,false));
+}
+function deleteInvalidTokens(){
+  if(!confirm('确认删除所有失效账号?'))return;
+  api('/admin/api/tokens/invalid',{method:'DELETE'}).then(r=>{
+    toast('已删除 '+r.deleted+' 个失效账号');loadAccounts();loadDashboard();
+  }).catch(e=>toast('删除失败: '+e.message,false));
+}
+function refreshAllAccounts(){
+  const tokens=ACCOUNTS.map(a=>a.token);
+  if(!tokens.length)return toast('无账号可刷新',false);
+  toast('开始刷新...');
+  api('/admin/api/batch/refresh',{method:'POST',body:JSON.stringify({tokens})}).then(r=>{
+    toast('刷新完成');loadAccounts();
+  }).catch(e=>toast('刷新失败: '+e.message,false));
+}
+function batchNSFW(enable){
+  const tokens=getSelectedTokens();
+  if(!tokens.length)return toast('请先选择账号',false);
+  api('/admin/api/batch/nsfw?enabled='+enable,{method:'POST',body:JSON.stringify({tokens})}).then(()=>{
+    toast('NSFW操作完成');loadAccounts();
+  }).catch(e=>toast('操作失败: '+e.message,false));
+}
+function batchToggle(enable){
+  const tokens=getSelectedTokens();
+  if(!tokens.length)return;
+  api('/admin/api/tokens/disabled/batch',{method:'POST',body:JSON.stringify({tokens,disabled:!enable})}).then(()=>{
+    toast(enable?'已启用':'已禁用');loadAccounts();
+  }).catch(e=>toast('操作失败: '+e.message,false));
+}
+function batchRefresh(){
+  const tokens=getSelectedTokens();
+  if(!tokens.length)return;
+  api('/admin/api/batch/refresh',{method:'POST',body:JSON.stringify({tokens})}).then(()=>{
+    toast('刷新完成');loadAccounts();
+  }).catch(e=>toast('刷新失败: '+e.message,false));
+}
+function batchDelete(){
+  const tokens=getSelectedTokens();
+  if(!tokens.length)return;
+  if(!confirm('确认删除选中的 '+tokens.length+' 个账号?'))return;
+  api('/admin/api/tokens',{method:'DELETE',body:JSON.stringify(tokens)}).then(r=>{
+    toast('已删除 '+r.deleted+' 个');loadAccounts();loadDashboard();
+  }).catch(e=>toast('删除失败: '+e.message,false));
+}
+
+// ========== 配置管理 ==========
+function loadConfig(){
+  api('/admin/api/config').then(data=>{
+    CONFIG_RAW=data;
+    document.getElementById('config-editor').value=JSON.stringify(data,null,2);
+  }).catch(e=>toast('加载配置失败: '+e.message,false));
+}
+function saveConfig(){
+  const text=document.getElementById('config-editor').value;
+  let patch;
+  try{patch=JSON.parse(text)}catch(e){return toast('JSON 格式错误: '+e.message,false)}
+  api('/admin/api/config',{method:'POST',body:JSON.stringify(patch)}).then(()=>{
+    toast('配置已保存并生效');
+  }).catch(e=>toast('保存失败: '+e.message,false));
+}
+
+// ========== 视频任务 ==========
+function loadVideoJobs(){
+  // 视频任务存储在内存中，无 API 端点，显示提示
+  document.getElementById('video-tbody').innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:20px">视频任务存储在内存中，通过 API 测试页面提交后可在此查看<br>使用 GET /v1/videos/{id} 查询任务状态</td></tr>';
+}
+
+// ========== 缓存管理 ==========
+function loadCacheStats(){
+  api('/admin/api/cache').then(data=>{
+    const img=data.local_image||{},vid=data.local_video||{};
+    let html='';
+    html+=`<div class="stat-card"><div class="stat-label">图片文件数</div><div class="stat-value">${img.count||0}</div><div class="stat-sub">${(img.size_mb||0).toFixed(1)}MB</div></div>`;
+    html+=`<div class="stat-card"><div class="stat-label">视频文件数</div><div class="stat-value">${vid.count||0}</div><div class="stat-sub">${(vid.size_mb||0).toFixed(1)}MB</div></div>`;
+    document.getElementById('cache-stats').innerHTML=html;
+    loadCacheList();
+  }).catch(e=>toast('加载缓存统计失败: '+e.message,false));
+}
+function switchCacheTab(tab,el){
+  CACHE_TAB=tab;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  loadCacheList();
+}
+function loadCacheList(){
+  api('/admin/api/cache/list?cache_type='+CACHE_TAB).then(data=>{
+    const items=data.items||[];
+    let html='';
+    if(!items.length)html='<tr><td colspan="4" style="text-align:center;color:var(--text2);padding:20px">暂无文件</td></tr>';
+    items.forEach(it=>{
+      html+=`<tr><td>${escapeHtml(it.name)}</td><td>${fmtSize(it.size_bytes)}</td><td>${fmtTime(it.modified_at/1000)}</td><td><button class="btn btn-sm btn-danger" onclick="deleteCacheFile('${escapeHtml(it.name)}')">删除</button></td></tr>`;
+    });
+    document.getElementById('cache-tbody').innerHTML=html;
+  }).catch(e=>toast('加载缓存列表失败: '+e.message,false));
+}
+function deleteCacheFile(name){
+  api('/admin/api/cache/item/delete',{method:'POST',body:JSON.stringify({type:CACHE_TAB,name})}).then(()=>{
+    toast('已删除');loadCacheList();loadCacheStats();
+  }).catch(e=>toast('删除失败: '+e.message,false));
+}
+function clearCache(){
+  if(!confirm('确认清空'+CACHE_TAB+'缓存?'))return;
+  api('/admin/api/cache/clear',{method:'POST',body:JSON.stringify({type:CACHE_TAB})}).then(r=>{
+    toast('已清理 '+r.result.removed+' 个文件');loadCacheList();loadCacheStats();
+  }).catch(e=>toast('清理失败: '+e.message,false));
+}
+
+// ========== API 测试 ==========
+function switchTestTab(tab,el){
+  document.querySelectorAll('#page-test .tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  ['chat','image','video'].forEach(t=>{
+    document.getElementById('test-'+t).style.display=t===tab?'block':'none';
+  });
+}
+function testChat(){
+  const model=document.getElementById('test-chat-model').value;
+  const msg=document.getElementById('test-chat-input').value.trim();
+  const stream=document.getElementById('test-chat-stream').checked;
+  if(!msg)return toast('请输入消息',false);
+  const out=document.getElementById('test-chat-output');
+  out.textContent='发送中...';
+  const body=JSON.stringify({model,messages:[{role:'user',content:msg}],stream});
+  const headers={'Content-Type':'application/json'};
+  if(ADMIN_KEY)headers['Authorization']='Bearer '+ADMIN_KEY;
+  if(stream){
+    out.textContent='';
+    fetch('/v1/chat/completions',{method:'POST',headers,body}).then(r=>{
+      const reader=r.body.getReader();
+      const dec=new TextDecoder();
+      function pump(){
+        reader.read().then(({done,value})=>{
+          if(done){return}
+          const lines=dec.decode(value).split('\n');
+          lines.forEach(l=>{
+            if(l.startsWith('data:')){
+              const d=l.slice(5).trim();
+              if(d==='[DONE]')return;
+              try{
+                const j=JSON.parse(d);
+                const delta=j.choices?.[0]?.delta;
+                if(delta?.reasoning_content)out.textContent+=delta.reasoning_content;
+                if(delta?.content)out.textContent+=delta.content;
+              }catch{}
+            }
+          });
+          pump();
+        });
+      }
+      pump();
+    }).catch(e=>out.textContent='错误: '+e.message);
+  }else{
+    fetch('/v1/chat/completions',{method:'POST',headers,body}).then(r=>r.json()).then(data=>{
+      out.textContent=data.choices?.[0]?.message?.content||JSON.stringify(data,null,2);
+    }).catch(e=>out.textContent='错误: '+e.message);
+  }
+}
+function testImage(){
+  const model=document.getElementById('test-img-model').value;
+  const prompt=document.getElementById('test-img-input').value.trim();
+  if(!prompt)return toast('请输入提示词',false);
+  const out=document.getElementById('test-img-output');
+  out.innerHTML='生成中...';
+  const headers={'Content-Type':'application/json'};
+  if(ADMIN_KEY)headers['Authorization']='Bearer '+ADMIN_KEY;
+  fetch('/v1/images/generations',{method:'POST',headers,body:JSON.stringify({model,prompt,n:1})}).then(r=>r.json()).then(data=>{
+    if(data.data&&data.data[0]){
+      const url=data.data[0].url||data.data[0].b64_json;
+      if(url.startsWith('http'))out.innerHTML=`<img src="${url}" style="max-width:100%;border-radius:8px">`;
+      else out.innerHTML=`<img src="data:image/png;base64,${url}" style="max-width:100%;border-radius:8px">`;
+    }else out.innerHTML=JSON.stringify(data,null,2);
+  }).catch(e=>out.innerHTML='错误: '+e.message);
+}
+function testVideo(){
+  const model=document.getElementById('test-vid-model').value;
+  const seconds=parseInt(document.getElementById('test-vid-seconds').value);
+  const prompt=document.getElementById('test-vid-input').value.trim();
+  if(!prompt)return toast('请输入提示词',false);
+  const out=document.getElementById('test-vid-output');
+  out.innerHTML='提交中...';
+  const headers={'Content-Type':'application/json'};
+  if(ADMIN_KEY)headers['Authorization']='Bearer '+ADMIN_KEY;
+  const formData=new FormData();
+  formData.append('model',model);
+  formData.append('prompt',prompt);
+  formData.append('seconds',seconds);
+  fetch('/v1/videos',{method:'POST',headers:ADMIN_KEY?{'Authorization':'Bearer '+ADMIN_KEY}:{},body:formData}).then(r=>r.json()).then(data=>{
+    if(data.id){
+      out.innerHTML=`任务已提交: <strong>${data.id}</strong><br>状态: ${data.status}<br><button class="btn btn-sm" onclick="pollVideo('${data.id}')">轮询状态</button><div id="vid-poll-result" style="margin-top:8px"></div>`;
+    }else out.innerHTML=JSON.stringify(data,null,2);
+  }).catch(e=>out.innerHTML='错误: '+e.message);
+}
+function pollVideo(id){
+  const headers={};
+  if(ADMIN_KEY)headers['Authorization']='Bearer '+ADMIN_KEY;
+  fetch('/v1/videos/'+id,{headers}).then(r=>r.json()).then(data=>{
+    const el=document.getElementById('vid-poll-result');
+    if(data.status==='completed'){
+      el.innerHTML=`<span class="tag tag-active">完成</span><br><video controls src="${data.video_url}" style="max-width:100%;margin-top:8px;border-radius:8px"></video>`;
+    }else if(data.status==='failed'){
+      el.innerHTML=`<span class="tag tag-disabled">失败</span> ${data.error?.message||''}`;
+    }else{
+      el.innerHTML=`<span class="tag tag-cooling">${data.status}</span> 进度: ${data.progress||0}%`;
+      setTimeout(()=>pollVideo(id),3000);
+    }
+  }).catch(e=>{
+    document.getElementById('vid-poll-result').innerHTML='查询失败: '+e.message;
+  });
+}
+
+// ========== 弹窗 ==========
+function showModal(html){
+  document.getElementById('modal-content').innerHTML=html;
+  document.getElementById('modal-overlay').classList.add('show');
+}
+function closeModal(){
+  document.getElementById('modal-overlay').classList.remove('show');
+}
+document.getElementById('modal-overlay').addEventListener('click',e=>{
+  if(e.target.id==='modal-overlay')closeModal();
+});
+</script>
+</body>
+</html>
