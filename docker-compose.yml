@@ -1,10 +1,7 @@
-# 服务器本地构建方案，不依赖 GHCR，避免 PAT 权限问题
+# 通过 GitHub Actions 构建镜像后，从 GHCR 拉取运行
 services:
   grok2api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: grok2api:local
+    image: ghcr.io/pxw-qiff/gtokapi:latest
     container_name: grok2api
     restart: unless-stopped
     ports:
