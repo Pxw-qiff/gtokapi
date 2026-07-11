@@ -41,13 +41,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 修改说明：将 GHCR_PAT 改为 GITHUB_TOKEN，避免 Fine-grained PAT 权限不足导致推送失败
+      # 修改说明：GITHUB_TOKEN 在此仓库无法写入 GHCR，改用 Classic PAT
+      # 需要仓库 Secrets 中配置 GHCR_PAT，且必须是 Classic PAT，勾选 write:packages 权限
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_PAT }}
 
       - name: Build and push to GHCR
         uses: docker/build-push-action@v6
