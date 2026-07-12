@@ -51,27 +51,44 @@ func (s *Server) handleDirectoryStats(c *gin.Context) {
 }
 
 func (s *Server) handleAdminVideoJobs(c *gin.Context) {
-	limit := parseIntQuery(c, "limit", 200)
-	if limit < 1 {
-		limit = 200
+	// 【修改说明】添加分页支持，与缓存列表 API 一致
+	page := parseIntQuery(c, "page", 1)
+	pageSize := parseIntQuery(c, "page_size", 50)
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 50
 	}
 	videoJobsMutex.Lock()
 	jobs := make([]*videoJob, 0, len(videoJobsMap))
 	for _, j := range videoJobsMap {
 		jobs = append(jobs, j)
 	}
+	total := len(videoJobsMap)
 	videoJobsMutex.Unlock()
 	sort.Slice(jobs, func(i, j int) bool {
 		return jobs[i].CreatedAt > jobs[j].CreatedAt
 	})
-	if len(jobs) > limit {
-		jobs = jobs[:limit]
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > total {
+		start = total
 	}
-	out := make([]map[string]any, 0, len(jobs))
-	for _, j := range jobs {
+	if end > total {
+		end = total
+	}
+	pageJobs := jobs[start:end]
+	out := make([]map[string]any, 0, len(pageJobs))
+	for _, j := range pageJobs {
 		out = append(out, j.toDict())
 	}
-	c.JSON(http.StatusOK, gin.H{"jobs": out, "total": len(videoJobsMap)})
+	c.JSON(http.StatusOK, gin.H{
+		"jobs":      out,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
 }
 
 func (s *Server) handleSync(c *gin.Context) {
@@ -181,14 +198,22 @@ func serializeRecord(rec *account.Record) map[string]any {
 	if pool == "" {
 		pool = "basic"
 	}
+	// 【修改说明】从 Ext 中提取会员到期时间，供前端显示和编辑
+	membershipExpiresAt := ""
+	if rec.Ext != nil {
+		if v, ok := rec.Ext["membership_expires_at"].(string); ok {
+			membershipExpiresAt = v
+		}
+	}
 	return map[string]any{
-		"token":        rec.Token,
-		"pool":         pool,
-		"status":       string(rec.Status),
-		"quota":        quota,
-		"use_count":    rec.UsageUseCount,
-		"last_used_at": lastUsed,
-		"tags":         rec.Tags,
+		"token":                  rec.Token,
+		"pool":                   pool,
+		"status":                 string(rec.Status),
+		"quota":                  quota,
+		"use_count":              rec.UsageUseCount,
+		"last_used_at":           lastUsed,
+		"tags":                   rec.Tags,
+		"membership_expires_at":  membershipExpiresAt,
 	}
 }
 
@@ -247,9 +272,10 @@ func (s *Server) handleTokensReplace(c *gin.Context) {
 
 func (s *Server) handleTokensAdd(c *gin.Context) {
 	var body struct {
-		Tokens []string `json:"tokens"`
-		Pool   string   `json:"pool"`
-		Tags   []string `json:"tags"`
+		Tokens    []string `json:"tokens"`
+		Pool      string   `json:"pool"`
+		Tags      []string `json:"tags"`
+		ExpiresAt string   `json:"expires_at"`
 	}
 	if err := readJSON(c, &body); err != nil {
 		writeAppError(c, err)
@@ -296,7 +322,12 @@ func (s *Server) handleTokensAdd(c *gin.Context) {
 			skipped++
 			continue
 		}
-		upserts = append(upserts, account.Upsert{Token: tok, Pool: pool, Tags: tags})
+		// 【修改说明】导入时把会员到期时间存到 Ext
+		ext := map[string]any{}
+		if body.ExpiresAt != "" {
+			ext["membership_expires_at"] = body.ExpiresAt
+		}
+		upserts = append(upserts, account.Upsert{Token: tok, Pool: pool, Tags: tags, Ext: ext})
 		newTokens = append(newTokens, tok)
 	}
 	if len(upserts) > 0 {
@@ -412,9 +443,10 @@ func (s *Server) handleTokensDeleteInvalid(c *gin.Context) {
 
 func (s *Server) handleTokensEdit(c *gin.Context) {
 	var body struct {
-		OldToken string `json:"old_token"`
-		Token    string `json:"token"`
-		Pool     string `json:"pool"`
+		OldToken  string `json:"old_token"`
+		Token     string `json:"token"`
+		Pool      string `json:"pool"`
+		ExpiresAt string `json:"expires_at"`
 	}
 	if err := readJSON(c, &body); err != nil {
 		writeAppError(c, err)
@@ -455,6 +487,15 @@ func (s *Server) handleTokensEdit(c *gin.Context) {
 	}
 	tags := oldRec.Tags
 	ext := oldRec.Ext
+	if ext == nil {
+		ext = map[string]any{}
+	}
+	// 【修改说明】编辑时更新会员到期时间，空字符串则清除
+	if body.ExpiresAt != "" {
+		ext["membership_expires_at"] = body.ExpiresAt
+	} else {
+		delete(ext, "membership_expires_at")
+	}
 	upserts := []account.Upsert{{Token: newTok, Pool: pool, Tags: tags, Ext: ext}}
 	if _, err := s.Repo.UpsertAccounts(ctx, upserts); err != nil {
 		writeAppError(c, err)

@@ -23,14 +23,7 @@ const (
 	VideoExtensionRefType = "ORIGINAL_REF_TYPE_VIDEO_EXTENSION"
 )
 
-// 尺寸 -> (aspectRatio, resolutionName)
-var videoSizeMap = map[string][2]string{
-	"720x1280":  {"9:16", "720p"},
-	"1280x720":  {"16:9", "720p"},
-	"1024x1024": {"1:1", "720p"},
-	"1024x1792": {"9:16", "720p"},
-	"1792x1024": {"16:9", "720p"},
-}
+// 尺寸映射已移除：用户直接传 aspectRatio（如 9:16），resolutionName 固定 720p。
 
 // preset -> mode flag
 var videoPresetFlags = map[string]string{
@@ -38,6 +31,13 @@ var videoPresetFlags = map[string]string{
 	"normal": "--mode=normal",
 	"spicy":  "--mode=extremely-spicy-or-crazy",
 	"custom": "--mode=custom",
+}
+
+// 合法的 aspectRatio 值
+var validAspectRatios = map[string]bool{
+	"9:16":  true,
+	"16:9":  true,
+	"1:1":   true,
 }
 
 // -----------------------------------------------------------------------
@@ -66,12 +66,12 @@ type VideoArtifact struct {
 // 尺寸 / 分段 / preset 解析
 // -----------------------------------------------------------------------
 
-// ResolveVideoSize 将尺寸字符串映射为 (aspectRatio, resolutionName)。
-func ResolveVideoSize(size string) (string, string) {
-	if v, ok := videoSizeMap[size]; ok {
-		return v[0], v[1]
-	}
-	return "9:16", "720p"
+// VideoResolution 固定的分辨率名，Grok 目前只支持 720p。
+const VideoResolution = "720p"
+
+// IsValidAspectRatio 检查 aspectRatio 是否合法。
+func IsValidAspectRatio(ar string) bool {
+	return validAspectRatios[ar]
 }
 
 // ResolveVideoPresetFlag 返回 preset 对应的 --mode=xxx flag。

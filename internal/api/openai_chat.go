@@ -43,11 +43,11 @@ type imageConfig struct {
 	ResponseFormat string `json:"response_format,omitempty"`
 }
 
+// 【修改说明】videoConfig 字段对齐：seconds->duration, size->aspect_ratio, 移除 resolution_name
 type videoConfig struct {
-	Seconds        int    `json:"seconds,omitempty"`
-	Size           string `json:"size,omitempty"`
-	ResolutionName string `json:"resolution_name,omitempty"`
-	Preset         string `json:"preset,omitempty"`
+	Duration    int    `json:"duration,omitempty"`
+	AspectRatio string `json:"aspect_ratio,omitempty"`
+	Preset      string `json:"preset,omitempty"`
 }
 
 // handleChatCompletions dispatches by capability.
@@ -732,24 +732,29 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 
 	logger.Infof("聊天视频模式: model=%s stream=%t refs=%d prompt=%q", req.Model, stream, len(imageURLs), truncate(prompt, 80))
 
-	// 解析视频配置
-	seconds := 6
-	size := "720x1280"
+	// 【修改说明】配置字段对齐：duration/aspect_ratio，resolutionName 固定 720p
+	duration := 6
+	aspectRatio := "9:16"
 	preset := "custom"
 	if req.VideoConfig != nil {
-		if req.VideoConfig.Seconds > 0 {
-			seconds = req.VideoConfig.Seconds
+		if req.VideoConfig.Duration > 0 {
+			duration = req.VideoConfig.Duration
 		}
-		if req.VideoConfig.Size != "" {
-			size = req.VideoConfig.Size
+		if req.VideoConfig.AspectRatio != "" {
+			aspectRatio = req.VideoConfig.AspectRatio
 		}
 		if req.VideoConfig.Preset != "" {
 			preset = req.VideoConfig.Preset
 		}
 	}
-	if !grok.IsValidVideoLength(seconds) {
-		logger.Warnf("聊天视频模式秒数非法: seconds=%d", seconds)
-		writeAppError(c, platform.ValidationError("seconds must be one of [6, 10, 12, 16, 20]", "seconds"))
+	if !grok.IsValidVideoLength(duration) {
+		logger.Warnf("聊天视频模式时长非法: duration=%d", duration)
+		writeAppError(c, platform.ValidationError("duration must be one of [6, 10, 12, 16, 20]", "duration"))
+		return
+	}
+	if !grok.IsValidAspectRatio(aspectRatio) {
+		logger.Warnf("聊天视频模式宽高比非法: aspect_ratio=%s", aspectRatio)
+		writeAppError(c, platform.ValidationError("aspect_ratio must be one of [9:16, 16:9, 1:1]", "aspect_ratio"))
 		return
 	}
 
@@ -852,8 +857,9 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 	}
 
 	// 3. 分段生成视频
-	aspectRatio, resolutionName := grok.ResolveVideoSize(size)
-	segments := grok.BuildSegmentLengths(seconds)
+	// 【修改说明】aspectRatio 用户直传，resolutionName 固定 720p
+	resolutionName := grok.VideoResolution
+	segments := grok.BuildSegmentLengths(duration)
 	totalSegments := len(segments)
 	extendPostID := parentPostID
 	elapsedSeconds := 0

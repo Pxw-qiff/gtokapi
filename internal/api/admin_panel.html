@@ -245,7 +245,7 @@ textarea{resize:vertical;min-height:80px;border-radius:10px}
 </div>
 <div class="table-wrap">
 <table>
-<thead><tr><th><input type="checkbox" id="acc-select-all" onchange="toggleSelectAll(this)"></th><th>Token</th><th>池</th><th>状态</th><th>NSFW</th><th>额度</th><th>使用次数</th><th>最后使用</th><th>操作</th></tr></thead>
+<thead><tr><th><input type="checkbox" id="acc-select-all" onchange="toggleSelectAll(this)"></th><th>Token</th><th>池</th><th>状态</th><th>NSFW</th><th>到期时间</th><th>额度</th><th>使用次数</th><th>最后使用</th><th>操作</th></tr></thead>
 <tbody id="acc-tbody"></tbody>
 </table>
 </div>
@@ -334,8 +334,8 @@ textarea{resize:vertical;min-height:80px;border-radius:10px}
 <tbody id="video-tbody"></tbody>
 </table>
 </div>
+<div id="video-pagination" style="display:flex;gap:6px;align-items:center;justify-content:center;margin-top:10px"></div>
 </div>
-<!-- 缓存管理 -->
 <div class="page" id="page-cache">
 <div class="page-title">缓存管理</div>
 <div class="stats-grid" id="cache-stats"></div>
@@ -353,8 +353,8 @@ textarea{resize:vertical;min-height:80px;border-radius:10px}
 <tbody id="cache-tbody"></tbody>
 </table>
 </div>
+<div id="cache-pagination" style="display:flex;gap:6px;align-items:center;justify-content:center;margin-top:10px"></div>
 </div>
-<!-- API 测试 -->
 <div class="page" id="page-test">
 <div class="page-title">API 测试</div>
 <div class="tabs">
@@ -397,21 +397,19 @@ textarea{resize:vertical;min-height:80px;border-radius:10px}
 <option value="grok-imagine-video">grok-imagine-video</option>
 <option value="grok-imagine-video-1.5">grok-imagine-video-1.5</option>
 </select>
-<label>秒数:</label>
-<select id="test-vid-seconds" style="width:auto">
-<option value="6">6</option>
-<option value="10">10</option>
-<option value="12">12</option>
-<option value="16">16</option>
-<option value="20">20</option>
+<label>时长:</label>
+<select id="test-vid-duration" style="width:auto">
+<option value="6">6秒</option>
+<option value="10">10秒</option>
+<option value="12">12秒</option>
+<option value="16">16秒</option>
+<option value="20">20秒</option>
 </select>
-<label>尺寸:</label>
-<select id="test-vid-size" style="width:auto">
-<option value="720x1280">720x1280 (竖屏)</option>
-<option value="1280x720">1280x720 (横屏)</option>
-<option value="1024x1024">1024x1024 (方形)</option>
-<option value="1024x1792">1024x1792 (竖屏)</option>
-<option value="1792x1024">1792x1024 (横屏)</option>
+<label>宽高比:</label>
+<select id="test-vid-aspect-ratio" style="width:auto">
+<option value="9:16">9:16 (竖屏)</option>
+<option value="16:9">16:9 (横屏)</option>
+<option value="1:1">1:1 (方形)</option>
 </select>
 </div>
 <textarea id="test-vid-input" placeholder="输入视频提示词..." style="width:100%;min-height:60px;margin-bottom:10px"></textarea>
@@ -465,6 +463,12 @@ let ACCOUNTS=[];
 let CONFIG_RAW={};
 let CACHE_TAB='video';
 let VIDEO_JOBS=[];
+let VIDEO_PAGE=1;
+let VIDEO_TOTAL=0;
+const VIDEO_PAGE_SIZE=20;
+let CACHE_PAGE=1;
+let CACHE_TOTAL=0;
+const CACHE_PAGE_SIZE=20;
 let VIDEO_REFRESH_TIMER=null;
 let LOG_DATA={lines:[],files:[],current:''};
 let LOG_REFRESH_TIMER=null;
@@ -518,6 +522,38 @@ function fmtSize(bytes){
   if(bytes<1024)return bytes+'B';
   if(bytes<1048576)return (bytes/1024).toFixed(1)+'KB';
   return (bytes/1048576).toFixed(1)+'MB';
+}
+// 通用分页渲染：上一页/页码/下一页
+function renderPagination(elId,page,total,pageSize,onPage){
+  const el=document.getElementById(elId);
+  if(!el)return;
+  const pages=Math.ceil(total/pageSize);
+  if(pages<=1){el.innerHTML=total>0?`<span style="font-size:12px;color:var(--fg-muted)">共 ${total} 条</span>`:'';return;}
+  let html='';
+  html+=`<button class="btn btn-sm" ${page<=1?'disabled':''} onclick="">‹</button>`;
+  // 最多显示 7 个页码按钮
+  let start=Math.max(1,page-3);
+  let end=Math.min(pages,start+6);
+  if(end-start<6)start=Math.max(1,end-6);
+  if(start>1)html+=`<button class="btn btn-sm" onclick="">1</button>`;
+  if(start>2)html+=`<span style="padding:0 4px;color:var(--fg-muted)">…</span>`;
+  for(let i=start;i<=end;i++){
+    html+=`<button class="btn btn-sm ${i===page?'btn-primary':''}" onclick="">${i}</button>`;
+  }
+  if(end<pages-1)html+=`<span style="padding:0 4px;color:var(--fg-muted)">…</span>`;
+  if(end<pages)html+=`<button class="btn btn-sm" onclick="">${pages}</button>`;
+  html+=`<button class="btn btn-sm" ${page>=pages?'disabled':''} onclick="">›</button>`;
+  html+=`<span style="font-size:12px;color:var(--fg-muted);margin-left:8px">共 ${total} 条 / ${pages} 页</span>`;
+  el.innerHTML=html;
+  // 绑定事件（避免 onclick 内联转义问题）
+  el.querySelectorAll('button').forEach(btn=>{
+    const txt=btn.textContent.trim();
+    if(btn.disabled)return;
+    if(txt==='‹'){btn.onclick=()=>onPage(page-1);return;}
+    if(txt==='›'){btn.onclick=()=>onPage(page+1);return;}
+    const n=parseInt(txt);
+    if(!isNaN(n))btn.onclick=()=>onPage(n);
+  });
 }
 function maskToken(t){
   if(!t||t.length<=20)return t;
@@ -654,7 +690,7 @@ function renderAccounts(){
   if(search)filtered=filtered.filter(a=>a.token.toLowerCase().includes(search));
   let html='';
   if(filtered.length===0){
-    html='<tr><td colspan="8" style="text-align:center;color:var(--fg-muted);padding:40px">暂无数据</td></tr>';
+    html+='<tr><td colspan="9" style="text-align:center;color:var(--fg-muted);padding:40px">暂无数据</td></tr>';
   }
   filtered.forEach(a=>{
     const isNSFW=(a.tags||[]).includes('nsfw');
@@ -673,13 +709,14 @@ function renderAccounts(){
       <td>${poolTag(a.pool)}</td>
       <td>${statusTag(a.status)}</td>
       <td>${isNSFW?'<span class="tag tag-active">已开启</span>':'<span class="tag tag-disabled">未开启</span>'}</td>
+      <td style="font-size:12px">${a.membership_expires_at||'-'}</td>
       <td style="font-size:11px">${quotaHtml}</td>
       <td>${a.use_count||0}</td>
       <td>${fmtTime(a.last_used_at)}</td>
       <td>
         <button class="btn btn-sm" onclick="toggleToken('${escapeHtml(a.token)}',${a.status==='disabled'})">${a.status==='disabled'?'启用':'禁用'}</button>
         <button class="btn btn-sm ${isNSFW?'btn-danger':''}" onclick="toggleNSFWOne('${escapeHtml(a.token)}',${!isNSFW})">${isNSFW?'关闭NSFW':'开启NSFW'}</button>
-        <button class="btn btn-sm" onclick="showEditTokenModal('${escapeHtml(a.token)}','${a.pool}')">编辑</button>
+        <button class="btn btn-sm" onclick="showEditTokenModal('${escapeHtml(a.token)}','${a.pool}','${a.membership_expires_at||''}')">编辑</button>
         <button class="btn btn-sm btn-danger" onclick="deleteToken('${escapeHtml(a.token)}')">删除</button>
       </td>
     </tr>`;
@@ -708,28 +745,32 @@ function showAddTokenModal(){
   showModal(`<h3>添加账号</h3>
     <div class="modal-field"><label>Token（每行一个）</label><textarea id="add-tokens" rows="6" placeholder="sso=xxx&#10;sso=yyy"></textarea></div>
     <div class="modal-field"><label>池</label><select id="add-pool"><option value="auto">auto (自动检测)</option><option value="basic">basic</option><option value="super">super</option><option value="heavy">heavy</option></select></div>
+    <div class="modal-field"><label>会员到期时间（可选）</label><input type="date" id="add-expires-at"></div>
     <div class="modal-actions"><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="addTokens()">添加</button></div>`);
 }
 function addTokens(){
   const tokens=document.getElementById('add-tokens').value.split('\n').map(t=>t.trim()).filter(Boolean);
   const pool=document.getElementById('add-pool').value;
+  const expires_at=document.getElementById('add-expires-at').value;
   if(!tokens.length)return toast('请输入至少一个token',false);
-  api('/admin/api/tokens/add',{method:'POST',body:JSON.stringify({tokens,pool})}).then(r=>{
+  api('/admin/api/tokens/add',{method:'POST',body:JSON.stringify({tokens,pool,expires_at})}).then(r=>{
     toast(`添加成功 ${r.count} 个, 跳过 ${r.skipped||0} 个`);
     closeModal();loadAccounts();loadDashboard();
   }).catch(e=>toast('添加失败: '+e.message,false));
 }
-function showEditTokenModal(token,pool){
+function showEditTokenModal(token,pool,expiresAt){
   showModal(`<h3>编辑账号</h3>
     <div class="modal-field"><label>Token</label><input type="text" id="edit-token" value="${escapeHtml(token)}"></div>
     <div class="modal-field"><label>池</label><select id="edit-pool"><option value="basic">basic</option><option value="super">super</option><option value="heavy">heavy</option></select></div>
+    <div class="modal-field"><label>会员到期时间（可选）</label><input type="date" id="edit-expires-at" value="${escapeHtml(expiresAt||'')}"></div>
     <div class="modal-actions"><button class="btn" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="editToken('${escapeHtml(token)}')">保存</button></div>`);
   document.getElementById('edit-pool').value=pool;
 }
 function editToken(oldToken){
   const token=document.getElementById('edit-token').value.trim();
   const pool=document.getElementById('edit-pool').value;
-  api('/admin/api/tokens/edit',{method:'PUT',body:JSON.stringify({old_token:oldToken,token,pool})}).then(()=>{
+  const expires_at=document.getElementById('edit-expires-at').value;
+  api('/admin/api/tokens/edit',{method:'PUT',body:JSON.stringify({old_token:oldToken,token,pool,expires_at})}).then(()=>{
     toast('修改成功');closeModal();loadAccounts();
   }).catch(e=>toast('修改失败: '+e.message,false));
 }
@@ -851,9 +892,11 @@ function saveConfig(){
 
 // ========== 视频任务 ==========
 function loadVideoJobs(){
-  api('/admin/api/video/jobs').then(data=>{
+  api('/admin/api/video/jobs?page='+VIDEO_PAGE+'&page_size='+VIDEO_PAGE_SIZE).then(data=>{
     VIDEO_JOBS=data.jobs||[];
+    VIDEO_TOTAL=data.total||0;
     renderVideoJobs();
+    renderPagination('video-pagination',VIDEO_PAGE,VIDEO_TOTAL,VIDEO_PAGE_SIZE,(p)=>{VIDEO_PAGE=p;loadVideoJobs()});
   }).catch(e=>{
     document.getElementById('video-tbody').innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:20px">加载失败: ${escapeHtml(e.message)}</td></tr>`;
   });
@@ -902,13 +945,15 @@ function loadCacheStats(){
 }
 function switchCacheTab(tab,el){
   CACHE_TAB=tab;
+  CACHE_PAGE=1;
   document.querySelectorAll('#page-cache .tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   loadCacheList();
 }
 function loadCacheList(){
-  api('/admin/api/cache/list?cache_type='+CACHE_TAB).then(data=>{
+  api('/admin/api/cache/list?cache_type='+CACHE_TAB+'&page='+CACHE_PAGE+'&page_size='+CACHE_PAGE_SIZE).then(data=>{
     const items=data.items||[];
+    CACHE_TOTAL=data.total||0;
     let html='';
     if(!items.length)html='<tr><td colspan="4" style="text-align:center;color:var(--fg-muted);padding:40px">暂无文件</td></tr>';
     items.forEach(it=>{
@@ -924,6 +969,7 @@ function loadCacheList(){
       html+=`<tr><td>${nameHtml}</td><td>${fmtSize(it.size_bytes)}</td><td>${fmtTime(it.modified_at/1000)}</td><td><button class="btn btn-sm btn-danger" onclick="deleteCacheFile('${escapeHtml(it.name)}')">删除</button></td></tr>`;
     });
     document.getElementById('cache-tbody').innerHTML=html;
+    renderPagination('cache-pagination',CACHE_PAGE,CACHE_TOTAL,CACHE_PAGE_SIZE,(p)=>{CACHE_PAGE=p;loadCacheList()});
   }).catch(e=>toast('加载缓存列表失败: '+e.message,false));
 }
 function deleteCacheFile(name){
@@ -1065,16 +1111,16 @@ function renderVidPreview(){
 
 function testVideo(){
   const model=document.getElementById('test-vid-model').value;
-  const seconds=parseInt(document.getElementById('test-vid-seconds').value);
-  const size=document.getElementById('test-vid-size').value;
+  const duration=parseInt(document.getElementById('test-vid-duration').value);
+  const aspect_ratio=document.getElementById('test-vid-aspect-ratio').value;
   const prompt=document.getElementById('test-vid-input').value.trim();
   if(!prompt)return toast('请输入提示词',false);
   const out=document.getElementById('test-vid-output');
   out.innerHTML='提交中...';
   const headers={'Content-Type':'application/json'};
   if(ADMIN_KEY)headers['Authorization']='Bearer '+ADMIN_KEY;
-  const body={model,prompt,seconds,size};
-  if(VID_IMAGES.length>0)body.image_urls=VID_IMAGES.slice();
+  const body={model,prompt,duration,aspect_ratio};
+  if(VID_IMAGES.length>0)body.images=VID_IMAGES.slice();
   fetch('/v1/videos',{method:'POST',headers,body:JSON.stringify(body)}).then(async r=>{
     const txt=await r.text();
     if(!r.ok){

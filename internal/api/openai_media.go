@@ -549,20 +549,24 @@ var (
 
 // handleVideoCreate queues an async video job.
 // 同时支持 JSON body 和 multipart 表单两种请求格式。
+//
+// 【修改说明】
+// 修改背景：用户要求请求体字段与 OpenAI 风格对齐
+// 解决问题：seconds->duration, size->aspect_ratio, image_url/image_urls->images（统一数组）
+// 设计考虑：resolutionName 固定 720p 不暴露，preset 默认 custom 不暴露
 func (s *Server) handleVideoCreate(c *gin.Context) {
-	var modelName, prompt, sizeStr, imageURL string
-	var imageURLs []string
-	var secondsInt int
+	var modelName, prompt, aspectRatio string
+	var images []string
+	var durationInt int
 
 	contentType := c.GetHeader("Content-Type")
 	if strings.HasPrefix(contentType, "application/json") {
 		var body struct {
-			Model    string   `json:"model"`
-			Prompt   string   `json:"prompt"`
-			Seconds  int      `json:"seconds"`
-			Size     string   `json:"size"`
-			ImageURL string   `json:"image_url"`
-			ImageURLs []string `json:"image_urls"`
+			Model       string   `json:"model"`
+			Prompt      string   `json:"prompt"`
+			Duration    int      `json:"duration"`
+			AspectRatio string   `json:"aspect_ratio"`
+			Images      []string `json:"images"`
 		}
 		if err := readJSON(c, &body); err != nil {
 			writeAppError(c, err)
@@ -570,10 +574,9 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 		}
 		modelName = strings.TrimSpace(body.Model)
 		prompt = strings.TrimSpace(body.Prompt)
-		secondsInt = body.Seconds
-		sizeStr = strings.TrimSpace(body.Size)
-		imageURL = strings.TrimSpace(body.ImageURL)
-		imageURLs = body.ImageURLs
+		durationInt = body.Duration
+		aspectRatio = strings.TrimSpace(body.AspectRatio)
+		images = body.Images
 	} else {
 		if err := c.Request.ParseMultipartForm(50 << 20); err != nil {
 			writeAppError(c, platform.ValidationError("Invalid multipart form: "+err.Error(), "body"))
@@ -581,21 +584,19 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 		}
 		modelName = strings.TrimSpace(c.Request.FormValue("model"))
 		prompt = strings.TrimSpace(c.Request.FormValue("prompt"))
-		if v := c.Request.FormValue("seconds"); v != "" {
+		if v := c.Request.FormValue("duration"); v != "" {
 			if n, err := parseIntStr(v); err == nil {
-				secondsInt = n
+				durationInt = n
 			}
 		}
-		sizeStr = strings.TrimSpace(c.Request.FormValue("size"))
-		imageURL = strings.TrimSpace(c.Request.FormValue("image_url"))
+		aspectRatio = strings.TrimSpace(c.Request.FormValue("aspect_ratio"))
+		// multipart 表单的 images 通过重复字段名传参
+		images = c.Request.PostForm["images"]
 	}
 
-	// 合并 image_url 和 image_urls，最多 7 张
+	// 参考图最多 7 张
 	allImages := []string{}
-	if imageURL != "" {
-		allImages = append(allImages, imageURL)
-	}
-	for _, u := range imageURLs {
+	for _, u := range images {
 		u = strings.TrimSpace(u)
 		if u != "" {
 			allImages = append(allImages, u)
@@ -618,30 +619,33 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 		writeAppError(c, platform.ValidationErrorCode("Model '"+modelName+"' is not a video model", "model", "invalid_model"))
 		return
 	}
-	seconds := 6
-	if secondsInt > 0 && isValidVideoLength(secondsInt) {
-		seconds = secondsInt
+	duration := 6
+	if durationInt > 0 && isValidVideoLength(durationInt) {
+		duration = durationInt
 	}
-	size := sizeStr
-	if size == "" {
-		size = "720x1280"
+	if aspectRatio == "" {
+		aspectRatio = "9:16"
+	}
+	if !grok.IsValidAspectRatio(aspectRatio) {
+		writeAppError(c, platform.ValidationError("aspect_ratio must be one of [9:16, 16:9, 1:1]", "aspect_ratio"))
+		return
 	}
 	job := &videoJob{
-		ID:        "video_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:24],
-		Object:    "video",
-		CreatedAt: time.Now().Unix(),
-		Status:    "queued",
-		Model:     modelName,
-		Progress:  0,
-		Prompt:    prompt,
-		Seconds:   seconds,
-		Size:      size,
-		Quality:   "standard",
-		ImageURLs: allImages,
+		ID:          "video_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:24],
+		Object:      "video",
+		CreatedAt:   time.Now().Unix(),
+		Status:      "queued",
+		Model:       modelName,
+		Progress:    0,
+		Prompt:      prompt,
+		Seconds:     duration,
+		Size:        aspectRatio,
+		Quality:     "standard",
+		ImageURLs:   allImages,
 	}
 	registerVideoJob(job)
 
-	logger.Infof("视频任务已创建: job=%s model=%s seconds=%d size=%s refs=%d", job.ID, modelName, seconds, size, len(allImages))
+	logger.Infof("视频任务已创建: job=%s model=%s duration=%d aspect_ratio=%s refs=%d", job.ID, modelName, duration, aspectRatio, len(allImages))
 
 	go s.runVideoJob(job, prompt, allImages, spec)
 	c.JSON(http.StatusOK, job.toDict())
@@ -772,7 +776,9 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 	}
 
 	// 3. 分段生成视频
-	aspectRatio, resolutionName := grok.ResolveVideoSize(job.Size)
+	// 【修改说明】aspectRatio 直接从 job.Size 获取（用户直传），resolutionName 固定 720p
+	aspectRatio := job.Size
+	resolutionName := grok.VideoResolution
 	segments := grok.BuildSegmentLengths(job.Seconds)
 	totalSegments := len(segments)
 	logger.Infof("视频任务开始分段生成: job=%s segments=%v aspect=%s resolution=%s", job.ID, segments, aspectRatio, resolutionName)
