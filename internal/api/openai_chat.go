@@ -626,8 +626,16 @@ func (s *Server) runWSImageChat(c *gin.Context, req *chatCompletionRequest, spec
 }
 
 // extractImagePrompt extracts the text prompt from chat messages.
+// extractImagePrompt 从 messages 中提取文本提示词。
 func extractImagePrompt(messages []map[string]any) string {
+	prompt, _ := extractVideoPromptAndReference(messages)
+	return prompt
+}
+
+// extractVideoPromptAndReference 从 messages 中提取文本提示词和参考图 URL（最多取第一张）。
+func extractVideoPromptAndReference(messages []map[string]any) (string, string) {
 	var prompt string
+	var imageURL string
 	for _, msg := range messages {
 		role, _ := msg["role"].(string)
 		if role == "system" || role == "developer" {
@@ -651,10 +659,17 @@ func extractImagePrompt(messages []map[string]any) string {
 						prompt = text
 					}
 				}
+				if t == "image_url" && imageURL == "" {
+					if urlObj, ok := bm["image_url"].(map[string]any); ok {
+						if u, ok := urlObj["url"].(string); ok && u != "" {
+							imageURL = u
+						}
+					}
+				}
 			}
 		}
 	}
-	return strings.TrimSpace(prompt)
+	return strings.TrimSpace(prompt), strings.TrimSpace(imageURL)
 }
 
 // computeAggregateProgress computes the aggregate progress across all slots.
@@ -701,7 +716,7 @@ func countCompleted(completedIDs map[string]bool) int {
 // 设计考虑：流式模式发送进度（reasoning_content）+ 最终 URL（content）；非流式模式返回完整 chat response
 // 注意事项：视频生成耗时较长（3-10分钟），超时设为 10 分钟
 func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *model.Spec, stream bool) {
-	prompt := extractImagePrompt(req.Messages)
+	prompt, imageURL := extractVideoPromptAndReference(req.Messages)
 	if prompt == "" {
 		writeAppError(c, platform.ValidationError("Video prompt cannot be empty", "messages"))
 		return
@@ -745,18 +760,46 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 	defer cancel()
 
 	// 1. 创建 media post，获取 parentPostId
-	postPayload := grok.BuildVideoPostPayload(prompt)
-	postBody, _ := json.Marshal(postPayload)
-	postResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, postBody,
-		grok.WithReferer("https://grok.com/imagine"))
-	if err != nil {
-		s.feedbackError(token, err, lease.ModeID)
-		writeAppError(c, platform.UpstreamError("media post create: "+err.Error(), 502, ""))
-		return
-	}
-	parentPostID := ""
-	if post, ok := postResp["post"].(map[string]any); ok {
-		parentPostID, _ = post["id"].(string)
+	//    有参考图：上传图片 -> 创建 image media post
+	//    无参考图：创建 video media post（原逻辑）
+	var parentPostID string
+	if imageURL != "" {
+		uploadResult, err := grok.UploadFromInput(ctx, s.Transport, token, imageURL)
+		if err != nil {
+			s.feedbackError(token, err, lease.ModeID)
+			writeAppError(c, platform.UpstreamError("reference image upload: "+err.Error(), 502, ""))
+			return
+		}
+		contentURL := uploadResult.FileURI
+		if contentURL == "" {
+			writeAppError(c, platform.UpstreamError("reference image upload returned no file URI", 502, ""))
+			return
+		}
+		imgPostPayload := grok.BuildImagePostPayload(contentURL)
+		imgPostBody, _ := json.Marshal(imgPostPayload)
+		imgPostResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, imgPostBody,
+			grok.WithReferer("https://grok.com/imagine"))
+		if err != nil {
+			s.feedbackError(token, err, lease.ModeID)
+			writeAppError(c, platform.UpstreamError("image media post create: "+err.Error(), 502, ""))
+			return
+		}
+		if post, ok := imgPostResp["post"].(map[string]any); ok {
+			parentPostID, _ = post["id"].(string)
+		}
+	} else {
+		postPayload := grok.BuildVideoPostPayload(prompt)
+		postBody, _ := json.Marshal(postPayload)
+		postResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, postBody,
+			grok.WithReferer("https://grok.com/imagine"))
+		if err != nil {
+			s.feedbackError(token, err, lease.ModeID)
+			writeAppError(c, platform.UpstreamError("media post create: "+err.Error(), 502, ""))
+			return
+		}
+		if post, ok := postResp["post"].(map[string]any); ok {
+			parentPostID, _ = post["id"].(string)
+		}
 	}
 	if parentPostID == "" {
 		s.feedbackError(token, platform.UpstreamError("media post returned no post id", 502, ""), lease.ModeID)

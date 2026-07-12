@@ -529,6 +529,7 @@ type videoJob struct {
 	Seconds     int    `json:"seconds"`
 	Size        string `json:"size"`
 	Quality     string `json:"quality"`
+	ImageURL    string `json:"image_url,omitempty"`
 	VideoURL    string `json:"video_url,omitempty"`
 	CompletedAt *int64 `json:"completed_at,omitempty"`
 	Error       *struct {
@@ -546,7 +547,7 @@ var (
 // handleVideoCreate queues an async video job.
 // 同时支持 JSON body 和 multipart 表单两种请求格式。
 func (s *Server) handleVideoCreate(c *gin.Context) {
-	var modelName, prompt, sizeStr string
+	var modelName, prompt, sizeStr, imageURL string
 	var secondsInt int
 
 	contentType := c.GetHeader("Content-Type")
@@ -556,6 +557,7 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 			Prompt  string `json:"prompt"`
 			Seconds int    `json:"seconds"`
 			Size    string `json:"size"`
+			ImageURL string `json:"image_url"`
 		}
 		if err := readJSON(c, &body); err != nil {
 			writeAppError(c, err)
@@ -565,6 +567,7 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 		prompt = strings.TrimSpace(body.Prompt)
 		secondsInt = body.Seconds
 		sizeStr = strings.TrimSpace(body.Size)
+		imageURL = strings.TrimSpace(body.ImageURL)
 	} else {
 		if err := c.Request.ParseMultipartForm(50 << 20); err != nil {
 			writeAppError(c, platform.ValidationError("Invalid multipart form: "+err.Error(), "body"))
@@ -578,6 +581,7 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 			}
 		}
 		sizeStr = strings.TrimSpace(c.Request.FormValue("size"))
+		imageURL = strings.TrimSpace(c.Request.FormValue("image_url"))
 	}
 
 	if modelName == "" || prompt == "" {
@@ -612,10 +616,11 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 		Seconds:   seconds,
 		Size:      size,
 		Quality:   "standard",
+		ImageURL:  imageURL,
 	}
 	registerVideoJob(job)
 
-	go s.runVideoJob(job, prompt, spec)
+	go s.runVideoJob(job, prompt, imageURL, spec)
 	c.JSON(http.StatusOK, job.toDict())
 }
 
@@ -644,11 +649,11 @@ func (s *Server) handleVideoGet(c *gin.Context) {
 // runVideoJob 执行视频生成任务（异步）。
 //
 // 【修改说明】
-// 修改背景：原实现用 BuildChatPayload（聊天接口），生成的是图片不是视频
-// 解决问题：改用正确的视频流程：media post -> imagine-video-gen -> SSE 解析 streamingVideoGenerationResponse
-// 设计考虑：支持多段拼接（12/16/20秒分段），每段独立请求，前一段的 videoPostId 作为后一段的 extendPostId
+// 修改背景：新增参考图功能，有 image_url 时需要先上传图片再创建 image media post
+// 解决问题：有参考图时 parentPostId 来自 image post；无参考图时来自 video post（原逻辑）
+// 设计考虑：参考图上传使用 UploadFromInput，支持 URL 和 data URI 两种格式
 // 注意事项：modelName 不再传入，已存储在 job.Model 中；preset 默认 custom
-func (s *Server) runVideoJob(job *videoJob, prompt string, spec *model.Spec) {
+func (s *Server) runVideoJob(job *videoJob, prompt, imageURL string, spec *model.Spec) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 	job.Status = "in_progress"
@@ -664,21 +669,54 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, spec *model.Spec) {
 	token := lease.Token
 
 	// 2. 创建 media post，获取 parentPostId
-	postPayload := grok.BuildVideoPostPayload(prompt)
-	postBody, _ := json.Marshal(postPayload)
-	postResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, postBody,
-		grok.WithReferer("https://grok.com/imagine"))
-	if err != nil {
-		s.failVideoJob(job, "media post create: "+err.Error())
-		return
-	}
-	parentPostID := ""
-	if post, ok := postResp["post"].(map[string]any); ok {
-		parentPostID, _ = post["id"].(string)
-	}
-	if parentPostID == "" {
-		s.failVideoJob(job, "media post returned no post id")
-		return
+	//    有参考图：上传图片 -> 创建 image media post -> 用其 post id
+	//    无参考图：创建 video media post -> 用其 post id（原逻辑）
+	var parentPostID string
+	if imageURL != "" {
+		// 2a. 上传参考图到 Grok 资产库
+		uploadResult, err := grok.UploadFromInput(ctx, s.Transport, token, imageURL)
+		if err != nil {
+			s.failVideoJob(job, "reference image upload: "+err.Error())
+			return
+		}
+		// 2b. 用上传后的 fileUri 构建 image media post
+		contentURL := uploadResult.FileURI
+		if contentURL == "" {
+			s.failVideoJob(job, "reference image upload returned no file URI")
+			return
+		}
+		imgPostPayload := grok.BuildImagePostPayload(contentURL)
+		imgPostBody, _ := json.Marshal(imgPostPayload)
+		imgPostResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, imgPostBody,
+			grok.WithReferer("https://grok.com/imagine"))
+		if err != nil {
+			s.failVideoJob(job, "image media post create: "+err.Error())
+			return
+		}
+		if post, ok := imgPostResp["post"].(map[string]any); ok {
+			parentPostID, _ = post["id"].(string)
+		}
+		if parentPostID == "" {
+			s.failVideoJob(job, "image media post returned no post id")
+			return
+		}
+	} else {
+		// 2c. 无参考图，走原来的 video media post
+		postPayload := grok.BuildVideoPostPayload(prompt)
+		postBody, _ := json.Marshal(postPayload)
+		postResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, postBody,
+			grok.WithReferer("https://grok.com/imagine"))
+		if err != nil {
+			s.failVideoJob(job, "media post create: "+err.Error())
+			return
+		}
+		if post, ok := postResp["post"].(map[string]any); ok {
+			parentPostID, _ = post["id"].(string)
+		}
+		if parentPostID == "" {
+			s.failVideoJob(job, "media post returned no post id")
+			return
+		}
 	}
 
 	// 3. 分段生成视频

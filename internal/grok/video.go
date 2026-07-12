@@ -128,6 +128,15 @@ func BuildVideoPostPayload(prompt string) map[string]any {
 	}
 }
 
+// BuildImagePostPayload 构建参考图的 media post payload。
+// mediaUrl 为已上传资产的 content URL，mediaType 为 MEDIA_POST_TYPE_IMAGE。
+func BuildImagePostPayload(mediaURL string) map[string]any {
+	return map[string]any{
+		"mediaType": ImageMediaType,
+		"mediaUrl":  mediaURL,
+	}
+}
+
 // BuildVideoGenPayload 构建第一段视频生成请求的 payload。
 // 发送到 POST /rest/app-chat/conversations/new，modelName 为 imagine-video-gen。
 func BuildVideoGenPayload(prompt, parentPostID, aspectRatio, resolutionName, preset string, videoLength int) map[string]any {
