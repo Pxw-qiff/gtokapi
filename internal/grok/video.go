@@ -139,7 +139,23 @@ func BuildImagePostPayload(mediaURL string) map[string]any {
 
 // BuildVideoGenPayload 构建第一段视频生成请求的 payload。
 // 发送到 POST /rest/app-chat/conversations/new，modelName 为 imagine-video-gen。
-func BuildVideoGenPayload(prompt, parentPostID, aspectRatio, resolutionName, preset string, videoLength int) map[string]any {
+// imageReferences 为多张参考图的 content URL 列表，非空时启用参考图模式。
+func BuildVideoGenPayload(prompt, parentPostID, aspectRatio, resolutionName, preset string, videoLength int, imageReferences []string) map[string]any {
+	videoGenConfig := map[string]any{
+		"parentPostId":   parentPostID,
+		"aspectRatio":    aspectRatio,
+		"videoLength":    videoLength,
+		"resolutionName": resolutionName,
+	}
+	if len(imageReferences) > 0 {
+		videoGenConfig["isVideoEdit"] = false
+		videoGenConfig["isReferenceToVideo"] = true
+		refs := make([]any, len(imageReferences))
+		for i, r := range imageReferences {
+			refs[i] = r
+		}
+		videoGenConfig["imageReferences"] = refs
+	}
 	return map[string]any{
 		"temporary":        true,
 		"modelName":        VideoModelName,
@@ -149,12 +165,7 @@ func BuildVideoGenPayload(prompt, parentPostID, aspectRatio, resolutionName, pre
 			"experiments": []any{},
 			"modelConfigOverride": map[string]any{
 				"modelMap": map[string]any{
-					"videoGenModelConfig": map[string]any{
-						"parentPostId":   parentPostID,
-						"aspectRatio":    aspectRatio,
-						"videoLength":    videoLength,
-						"resolutionName": resolutionName,
-					},
+					"videoGenModelConfig": videoGenConfig,
 				},
 			},
 		},

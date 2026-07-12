@@ -405,8 +405,21 @@ textarea{resize:vertical;min-height:80px;border-radius:10px}
 <option value="16">16</option>
 <option value="20">20</option>
 </select>
+<label>尺寸:</label>
+<select id="test-vid-size" style="width:auto">
+<option value="720x1280">720x1280 (竖屏)</option>
+<option value="1280x720">1280x720 (横屏)</option>
+<option value="1024x1024">1024x1024 (方形)</option>
+<option value="1024x1792">1024x1792 (竖屏)</option>
+<option value="1792x1024">1792x1024 (横屏)</option>
+</select>
 </div>
 <textarea id="test-vid-input" placeholder="输入视频提示词..." style="width:100%;min-height:60px;margin-bottom:10px"></textarea>
+<div id="test-vid-drop" style="border:2px dashed var(--border);border-radius:14px;padding:20px;text-align:center;color:var(--fg-muted);font-size:13px;margin-bottom:10px;cursor:pointer;transition:border-color .15s,background .15s">
+拖拽图片到此处或点击选择（可选参考图，最多 7 张）
+<input type="file" id="test-vid-file" accept="image/*" multiple style="display:none" onchange="handleVidFile(this)">
+</div>
+<div id="test-vid-preview" style="display:none;margin-bottom:10px"></div>
 <button class="btn btn-primary" onclick="testVideo()">提交任务</button>
 <div id="test-vid-output" style="margin-top:14px"></div>
 </div>
@@ -982,16 +995,78 @@ function testImage(){
     }else out.innerHTML=JSON.stringify(data,null,2);
   }).catch(e=>out.innerHTML='错误: '+e.message);
 }
+// ========== 视频参考图拖拽上传（多张，最多 7 张） ==========
+let VID_IMAGES=[]; // 存储已选参考图的 data URI 列表
+const VID_MAX=7;
+
+function handleVidFile(input){
+  const files=Array.from(input.files);
+  for(const f of files){loadVidImage(f);}
+  input.value='';
+}
+function loadVidImage(file){
+  if(!file.type.startsWith('image/'))return toast('请选择图片文件',false);
+  if(VID_IMAGES.length>=VID_MAX)return toast(`最多 ${VID_MAX} 张参考图`,false);
+  const reader=new FileReader();
+  reader.onload=e=>{
+    VID_IMAGES.push(e.target.result);
+    renderVidPreview();
+  };
+  reader.readAsDataURL(file);
+}
+function removeVidImage(idx){
+  VID_IMAGES.splice(idx,1);
+  renderVidPreview();
+}
+function renderVidPreview(){
+  const preview=document.getElementById('test-vid-preview');
+  if(VID_IMAGES.length===0){
+    preview.style.display='none';
+    preview.innerHTML='';
+    document.getElementById('test-vid-drop').style.display='block';
+    return;
+  }
+  document.getElementById('test-vid-drop').style.display='block';
+  preview.style.display='block';
+  let html='<div style="display:flex;flex-wrap:wrap;gap:8px">';
+  VID_IMAGES.forEach((uri,i)=>{
+    html+=`<div style="position:relative">
+      <img src="${uri}" style="height:80px;border-radius:8px;border:1px solid var(--border)">
+      <button class="btn btn-sm btn-danger" style="position:absolute;top:-6px;right:-6px;padding:2px 6px;font-size:11px;border-radius:50%" onclick="removeVidImage(${i})">×</button>
+    </div>`;
+  });
+  html+='</div>';
+  html+=`<div style="font-size:12px;color:var(--fg-muted);margin-top:4px">${VID_IMAGES.length}/${VID_MAX} 张</div>`;
+  preview.innerHTML=html;
+}
+(function(){
+  const drop=document.getElementById('test-vid-drop');
+  if(!drop)return;
+  drop.addEventListener('click',()=>document.getElementById('test-vid-file').click());
+  drop.addEventListener('dragover',e=>{e.preventDefault();drop.style.borderColor='var(--accent)';drop.style.background='var(--bg-hover)'});
+  drop.addEventListener('dragleave',e=>{e.preventDefault();drop.style.borderColor='var(--border)';drop.style.background='transparent'});
+  drop.addEventListener('drop',e=>{
+    e.preventDefault();
+    drop.style.borderColor='var(--border)';
+    drop.style.background='transparent';
+    const files=Array.from(e.dataTransfer.files);
+    for(const f of files)loadVidImage(f);
+  });
+})();
+
 function testVideo(){
   const model=document.getElementById('test-vid-model').value;
   const seconds=parseInt(document.getElementById('test-vid-seconds').value);
+  const size=document.getElementById('test-vid-size').value;
   const prompt=document.getElementById('test-vid-input').value.trim();
   if(!prompt)return toast('请输入提示词',false);
   const out=document.getElementById('test-vid-output');
   out.innerHTML='提交中...';
   const headers={'Content-Type':'application/json'};
   if(ADMIN_KEY)headers['Authorization']='Bearer '+ADMIN_KEY;
-  fetch('/v1/videos',{method:'POST',headers,body:JSON.stringify({model,prompt,seconds})}).then(r=>r.json()).then(data=>{
+  const body={model,prompt,seconds,size};
+  if(VID_IMAGES.length>0)body.image_urls=VID_IMAGES.slice();
+  fetch('/v1/videos',{method:'POST',headers,body:JSON.stringify(body)}).then(r=>r.json()).then(data=>{
     if(data.id){
       out.innerHTML=`任务已提交: <strong>${data.id}</strong><br>状态: ${data.status}<br><button class="btn btn-sm" onclick="pollVideo('${data.id}')">轮询状态</button><div id="vid-poll-result" style="margin-top:8px"></div>`;
     }else out.innerHTML=JSON.stringify(data,null,2);

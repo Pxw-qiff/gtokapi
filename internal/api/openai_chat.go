@@ -632,10 +632,10 @@ func extractImagePrompt(messages []map[string]any) string {
 	return prompt
 }
 
-// extractVideoPromptAndReference 从 messages 中提取文本提示词和参考图 URL（最多取第一张）。
-func extractVideoPromptAndReference(messages []map[string]any) (string, string) {
+// extractVideoPromptAndReference 从 messages 中提取文本提示词和参考图 URL 列表（最多 7 张）。
+func extractVideoPromptAndReference(messages []map[string]any) (string, []string) {
 	var prompt string
-	var imageURL string
+	var imageRefs []string
 	for _, msg := range messages {
 		role, _ := msg["role"].(string)
 		if role == "system" || role == "developer" {
@@ -659,17 +659,19 @@ func extractVideoPromptAndReference(messages []map[string]any) (string, string) 
 						prompt = text
 					}
 				}
-				if t == "image_url" && imageURL == "" {
+				if t == "image_url" {
 					if urlObj, ok := bm["image_url"].(map[string]any); ok {
 						if u, ok := urlObj["url"].(string); ok && u != "" {
-							imageURL = u
+							if len(imageRefs) < 7 {
+								imageRefs = append(imageRefs, u)
+							}
 						}
 					}
 				}
 			}
 		}
 	}
-	return strings.TrimSpace(prompt), strings.TrimSpace(imageURL)
+	return strings.TrimSpace(prompt), imageRefs
 }
 
 // computeAggregateProgress computes the aggregate progress across all slots.
@@ -716,7 +718,7 @@ func countCompleted(completedIDs map[string]bool) int {
 // 设计考虑：流式模式发送进度（reasoning_content）+ 最终 URL（content）；非流式模式返回完整 chat response
 // 注意事项：视频生成耗时较长（3-10分钟），超时设为 10 分钟
 func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *model.Spec, stream bool) {
-	prompt, imageURL := extractVideoPromptAndReference(req.Messages)
+	prompt, imageURLs := extractVideoPromptAndReference(req.Messages)
 	if prompt == "" {
 		writeAppError(c, platform.ValidationError("Video prompt cannot be empty", "messages"))
 		return
@@ -760,32 +762,44 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 	defer cancel()
 
 	// 1. 创建 media post，获取 parentPostId
-	//    有参考图：上传图片 -> 创建 image media post
+	//    有参考图：逐张上传 -> 每张创建 image media post -> 第一张 post id 作为 parentPostId，所有 content URL 作为 imageReferences
 	//    无参考图：创建 video media post（原逻辑）
 	var parentPostID string
-	if imageURL != "" {
-		uploadResult, err := grok.UploadFromInput(ctx, s.Transport, token, imageURL)
-		if err != nil {
-			s.feedbackError(token, err, lease.ModeID)
-			writeAppError(c, platform.UpstreamError("reference image upload: "+err.Error(), 502, ""))
-			return
-		}
-		contentURL := uploadResult.FileURI
-		if contentURL == "" {
-			writeAppError(c, platform.UpstreamError("reference image upload returned no file URI", 502, ""))
-			return
-		}
-		imgPostPayload := grok.BuildImagePostPayload(contentURL)
-		imgPostBody, _ := json.Marshal(imgPostPayload)
-		imgPostResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, imgPostBody,
-			grok.WithReferer("https://grok.com/imagine"))
-		if err != nil {
-			s.feedbackError(token, err, lease.ModeID)
-			writeAppError(c, platform.UpstreamError("image media post create: "+err.Error(), 502, ""))
-			return
-		}
-		if post, ok := imgPostResp["post"].(map[string]any); ok {
-			parentPostID, _ = post["id"].(string)
+	var imageReferences []string
+	if len(imageURLs) > 0 {
+		for i, imgURL := range imageURLs {
+			uploadResult, err := grok.UploadFromInput(ctx, s.Transport, token, imgURL)
+			if err != nil {
+				s.feedbackError(token, err, lease.ModeID)
+				writeAppError(c, platform.UpstreamError(fmt.Sprintf("reference image %d upload: %s", i+1, err.Error()), 502, ""))
+				return
+			}
+			contentURL := uploadResult.FileURI
+			if contentURL == "" {
+				writeAppError(c, platform.UpstreamError(fmt.Sprintf("reference image %d upload returned no file URI", i+1), 502, ""))
+				return
+			}
+			imgPostPayload := grok.BuildImagePostPayload(contentURL)
+			imgPostBody, _ := json.Marshal(imgPostPayload)
+			imgPostResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, imgPostBody,
+				grok.WithReferer("https://grok.com/imagine"))
+			if err != nil {
+				s.feedbackError(token, err, lease.ModeID)
+				writeAppError(c, platform.UpstreamError(fmt.Sprintf("image media post %d create: %s", i+1, err.Error()), 502, ""))
+				return
+			}
+			postID := ""
+			if post, ok := imgPostResp["post"].(map[string]any); ok {
+				postID, _ = post["id"].(string)
+			}
+			if postID == "" {
+				writeAppError(c, platform.UpstreamError(fmt.Sprintf("image media post %d returned no post id", i+1), 502, ""))
+				return
+			}
+			if i == 0 {
+				parentPostID = postID
+			}
+			imageReferences = append(imageReferences, contentURL)
 		}
 	} else {
 		postPayload := grok.BuildVideoPostPayload(prompt)
@@ -830,7 +844,7 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 		referer := "https://grok.com/imagine"
 		if index == 0 {
 			payload = grok.BuildVideoGenPayload(
-				prompt, parentPostID, aspectRatio, resolutionName, preset, segmentLength,
+				prompt, parentPostID, aspectRatio, resolutionName, preset, segmentLength, imageReferences,
 			)
 		} else {
 			payload = grok.BuildVideoExtendPayload(
