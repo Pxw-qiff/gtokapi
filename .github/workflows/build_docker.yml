@@ -79,5 +79,5 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             -H "Content-Type: application/json" \
             --fail-with-body \
-            "https://api.github.com/users/${{ github.repository_owner }}/packages/container/${package_name}/visibility" \
+            "https://api.github.com/user/packages/container/${package_name}/visibility" \
             -d '{"visibility":"public"}'
