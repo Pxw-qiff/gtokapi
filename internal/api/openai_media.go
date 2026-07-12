@@ -544,13 +544,42 @@ var (
 )
 
 // handleVideoCreate queues an async video job.
+// 同时支持 JSON body 和 multipart 表单两种请求格式。
 func (s *Server) handleVideoCreate(c *gin.Context) {
-	if err := c.Request.ParseMultipartForm(50 << 20); err != nil {
-		writeAppError(c, platform.ValidationError("Invalid multipart form: "+err.Error(), "body"))
-		return
+	var modelName, prompt, sizeStr string
+	var secondsInt int
+
+	contentType := c.GetHeader("Content-Type")
+	if strings.HasPrefix(contentType, "application/json") {
+		var body struct {
+			Model   string `json:"model"`
+			Prompt  string `json:"prompt"`
+			Seconds int    `json:"seconds"`
+			Size    string `json:"size"`
+		}
+		if err := readJSON(c, &body); err != nil {
+			writeAppError(c, err)
+			return
+		}
+		modelName = strings.TrimSpace(body.Model)
+		prompt = strings.TrimSpace(body.Prompt)
+		secondsInt = body.Seconds
+		sizeStr = strings.TrimSpace(body.Size)
+	} else {
+		if err := c.Request.ParseMultipartForm(50 << 20); err != nil {
+			writeAppError(c, platform.ValidationError("Invalid multipart form: "+err.Error(), "body"))
+			return
+		}
+		modelName = strings.TrimSpace(c.Request.FormValue("model"))
+		prompt = strings.TrimSpace(c.Request.FormValue("prompt"))
+		if v := c.Request.FormValue("seconds"); v != "" {
+			if n, err := parseIntStr(v); err == nil {
+				secondsInt = n
+			}
+		}
+		sizeStr = strings.TrimSpace(c.Request.FormValue("size"))
 	}
-	modelName := strings.TrimSpace(c.Request.FormValue("model"))
-	prompt := strings.TrimSpace(c.Request.FormValue("prompt"))
+
 	if modelName == "" || prompt == "" {
 		writeAppError(c, platform.ValidationError("Missing model or prompt", "body"))
 		return
@@ -565,14 +594,10 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 		return
 	}
 	seconds := 6
-	if v := c.Request.FormValue("seconds"); v != "" {
-		if n, err := parseIntStr(v); err == nil {
-			if isValidVideoLength(n) {
-				seconds = n
-			}
-		}
+	if secondsInt > 0 && isValidVideoLength(secondsInt) {
+		seconds = secondsInt
 	}
-	size := c.Request.FormValue("size")
+	size := sizeStr
 	if size == "" {
 		size = "720x1280"
 	}

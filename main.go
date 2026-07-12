@@ -118,7 +118,8 @@ func main() {
 
 	// 9. Build the API server and HTTP handler tree.
 	server := api.NewServer(repo, directory, refreshSvc, transport, mediaStore)
-	handler := server.Router()
+	apiHandler := server.APIRouter()
+	adminHandler := server.AdminRouter()
 
 	// 10. Start long-running goroutines.
 	var wg sync.WaitGroup
@@ -162,27 +163,43 @@ func main() {
 		runConsoleRecoveryLoop(ctx, refreshSvc, 600)
 	}()
 
-	// 11. Start the HTTP server.
+	// 11. Start two HTTP servers: API (internal) + Admin (external).
 	host := envOrDefault("SERVER_HOST", "0.0.0.0")
-	port := envOrDefault("SERVER_PORT", "8000")
-	addr := host + ":" + port
-	httpServer := &http.Server{
-		Addr:              addr,
-		Handler:           handler,
+	apiPort := envOrDefault("SERVER_PORT", "8000")
+	adminPort := envOrDefault("ADMIN_PORT", "1379")
+	apiAddr := host + ":" + apiPort
+	adminAddr := host + ":" + adminPort
+
+	apiServer := &http.Server{
+		Addr:              apiAddr,
+		Handler:           apiHandler,
+		ReadHeaderTimeout: 30 * time.Second,
+		ReadTimeout:       0,
+		WriteTimeout:      0,
+		IdleTimeout:       120 * time.Second,
+	}
+	adminServer := &http.Server{
+		Addr:              adminAddr,
+		Handler:           adminHandler,
 		ReadHeaderTimeout: 30 * time.Second,
 		ReadTimeout:       0,
 		WriteTimeout:      0,
 		IdleTimeout:       120 * time.Second,
 	}
 
-	// Listen on a separate goroutine so the main goroutine can wait for shutdown.
-	serverErrCh := make(chan error, 1)
+	// Listen on separate goroutines so the main goroutine can wait for shutdown.
+	serverErrCh := make(chan error, 2)
 	go func() {
-		logger.Infof("http server listening on %s", addr)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Infof("API server listening on %s (internal)", apiAddr)
+		if err := apiServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErrCh <- err
 		}
-		close(serverErrCh)
+	}()
+	go func() {
+		logger.Infof("Admin server listening on %s (external)", adminAddr)
+		if err := adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErrCh <- err
+		}
 	}()
 
 	// 12. Wait for SIGINT/SIGTERM or a fatal server error.
@@ -200,8 +217,11 @@ func main() {
 	cancel()
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		logger.Warnf("http server shutdown timed out: error=%v", err)
+	if err := apiServer.Shutdown(shutdownCtx); err != nil {
+		logger.Warnf("api server shutdown timed out: error=%v", err)
+	}
+	if err := adminServer.Shutdown(shutdownCtx); err != nil {
+		logger.Warnf("admin server shutdown timed out: error=%v", err)
 	}
 
 	wg.Wait()

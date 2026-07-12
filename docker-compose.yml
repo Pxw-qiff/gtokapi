@@ -1,11 +1,13 @@
 # 通过 GitHub Actions 构建镜像后，从 GHCR 拉取运行
+# 8000 端口仅供 Docker 内部网络访问（new-api 通过容器名 http://grok2api:8000 调用）
+# 1379 端口映射到宿主机，管理员通过 IP:1379 访问管理面板和媒体文件下载
 services:
   grok2api:
     image: ghcr.io/pxw-qiff/gtokapi:latest
     container_name: grok2api
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "1379:1379"
     env_file:
       - .env
     volumes:

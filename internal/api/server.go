@@ -18,28 +18,29 @@ import (
 
 // Server bundles the dependencies every handler needs.
 type Server struct {
-	Repo      account.Repository
-	Directory *account.Directory
-	Refresh   *account.RefreshService
-	Transport *grok.Transport
-	Media     *storage.LocalMediaCacheStore
+	Repo        account.Repository
+	Directory   *account.Directory
+	Refresh     *account.RefreshService
+	Transport   *grok.Transport
+	Media       *storage.LocalMediaCacheStore
 	ConvTracker *grok.ConversationTracker
 }
 
 // NewServer constructs a Server bound to the given dependencies.
 func NewServer(repo account.Repository, dir *account.Directory, refresh *account.RefreshService, transport *grok.Transport, media *storage.LocalMediaCacheStore) *Server {
 	return &Server{
-		Repo:      repo,
-		Directory: dir,
-		Refresh:   refresh,
-		Transport: transport,
-		Media:     media,
+		Repo:        repo,
+		Directory:   dir,
+		Refresh:     refresh,
+		Transport:   transport,
+		Media:       media,
 		ConvTracker: grok.NewConversationTracker(10 * time.Minute),
 	}
 }
 
-// Router builds the gin.Engine for the whole API surface.
-func (s *Server) Router() *gin.Engine {
+// APIRouter builds the gin.Engine for the internal API surface (port 8000).
+// 仅 Docker 内部网络可达，不映射到宿主机，供 new-api 通过容器名访问。
+func (s *Server) APIRouter() *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery())
@@ -54,10 +55,6 @@ func (s *Server) Router() *gin.Engine {
 	engine.GET("/meta", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"version": "1.0.0"})
 	})
-
-	// Public local media serving (no auth — file IDs are unguessable).
-	engine.GET("/v1/files/image", s.handleFileImage)
-	engine.GET("/v1/files/video", s.handleFileVideo)
 
 	// OpenAI-compatible endpoints.
 	v1 := engine.Group("/v1")
@@ -80,6 +77,23 @@ func (s *Server) Router() *gin.Engine {
 	{
 		msg.POST("", s.handleMessages)
 	}
+
+	return engine
+}
+
+// AdminRouter builds the gin.Engine for the admin panel (port 1379).
+// 映射到宿主机，管理员通过 IP:1379 访问管理面板和媒体文件下载。
+func (s *Server) AdminRouter() *gin.Engine {
+	gin.SetMode(gin.ReleaseMode)
+	engine := gin.New()
+	engine.Use(gin.Recovery())
+	engine.Use(logMiddleware())
+	engine.Use(configReloadMiddleware())
+	engine.Use(corsMiddleware())
+
+	// Public local media serving (no auth - file IDs are unguessable).
+	engine.GET("/v1/files/image", s.handleFileImage)
+	engine.GET("/v1/files/video", s.handleFileVideo)
 
 	// Admin panel (no auth - page handles auth via admin key).
 	engine.GET("/admin", s.handleAdminPanel)
