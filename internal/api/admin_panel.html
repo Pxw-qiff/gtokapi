@@ -1,138 +1,207 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Grok2API 管理面板</title>
 <style>
-:root{--bg:#0f1117;--card:#1a1d29;--border:#2a2d3a;--text:#e4e6eb;--text2:#8b8fa3;--accent:#4f7cff;--accent2:#22c55e;--warn:#f59e0b;--danger:#ef4444;--radius:8px}
+/* ========== 主题变量 ========== */
+[data-theme="light"]{
+  --bg:#FAF9F5;--bg-card:#fff;--bg-hover:#f5f4f1;--bg-surface:#f1ece2;
+  --fg:#1a1a1a;--fg-muted:#666;--fg-subtle:#999;
+  --border:#e5e5e5;--border-light:#f0f0f0;
+  --accent:#111;--accent-fg:#fff;--accent-hover:#333;
+  --success:#059669;--success-bg:#ecfdf5;
+  --warn:#ea580c;--warn-bg:#fff7ed;
+  --danger:#dc2626;--danger-bg:#fef2f2;
+  --info:#2563eb;--info-bg:#eff6ff;
+  --shadow:0 4px 16px rgba(0,0,0,.06);--shadow-lg:0 20px 50px rgba(0,0,0,.06);
+  --radius:8px;--radius-xl:14px;
+}
+[data-theme="dark"]{
+  --bg:#1a1814;--bg-card:#252220;--bg-hover:#2d2a26;--bg-surface:#1f1d1a;
+  --fg:#e4e0db;--fg-muted:#9a948a;--fg-subtle:#6a645a;
+  --border:#3a3631;--border-light:#2d2a26;
+  --accent:#e4e0db;--accent-fg:#1a1814;--accent-hover:#c4c0bb;
+  --success:#34d399;--success-bg:#1a2e26;
+  --warn:#fb923c;--warn-bg:#2e2218;
+  --danger:#f87171;--danger-bg:#2e1a1a;
+  --info:#60a5fa;--info-bg:#1a2238;
+  --shadow:0 4px 16px rgba(0,0,0,.3);--shadow-lg:0 20px 50px rgba(0,0,0,.3);
+  --radius:8px;--radius-xl:14px;
+}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
-/* 登录页 */
-#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh}
-.login-box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:40px;width:360px}
-.login-box h1{text-align:center;font-size:20px;margin-bottom:24px}
-.login-box input{width:100%;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px;margin-bottom:14px}
-.login-box button{width:100%;padding:12px;background:var(--accent);border:none;border-radius:var(--radius);color:#fff;font-size:14px;cursor:pointer;transition:.2s}
-.login-box button:hover{opacity:.85}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--fg);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;transition:background .2s,color .2s}
+a{color:inherit;text-decoration:none}
+button,input,textarea,select{font:inherit;outline:none;border:none;background:none;color:inherit}
+button{cursor:pointer}
+::selection{background:var(--accent);color:var(--accent-fg)}
+
+/* ========== 登录页 ========== */
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--bg)}
+.login-card{background:var(--bg-card);border:1px solid transparent;border-radius:var(--radius-xl);padding:28px;width:min(380px,92vw);box-shadow:var(--shadow-lg);transition:border-color .2s}
+.login-card:hover{border-color:var(--fg)}
+.login-brand{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-muted);font-weight:600;margin-bottom:6px}
+.login-title{font-size:20px;font-weight:600}
+.login-subtitle{font-size:12px;color:var(--fg-muted);margin-top:4px;margin-bottom:18px}
+.login-form{display:grid;gap:10px}
+.login-input{width:100%;height:38px;padding:0 12px;font-size:13px;border-radius:10px;border:1px solid var(--border);background:var(--bg-card);transition:border-color .15s}
+.login-input:focus{border-color:var(--fg-subtle)}
+.login-btn{height:38px;border-radius:10px;background:var(--accent);color:var(--accent-fg);font-size:13px;font-weight:600;transition:opacity .15s}
+.login-btn:hover{opacity:.88}
 .login-err{color:var(--danger);font-size:12px;text-align:center;margin-top:8px;display:none}
-/* 主布局 */
+
+/* ========== 主布局 ========== */
 #app{display:none;min-height:100vh}
-.sidebar{position:fixed;left:0;top:0;bottom:0;width:200px;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 0;z-index:10}
-.sidebar-logo{padding:0 20px 16px;font-size:16px;font-weight:600;border-bottom:1px solid var(--border);margin-bottom:8px}
-.nav-item{padding:10px 20px;cursor:pointer;color:var(--text2);transition:.15s;display:flex;align-items:center;gap:10px;font-size:13px}
-.nav-item:hover{background:var(--bg);color:var(--text)}
-.nav-item.active{background:var(--bg);color:var(--accent);border-right:3px solid var(--accent)}
-.nav-item svg{width:16px;height:16px;flex-shrink:0}
-.sidebar-footer{margin-top:auto;padding:12px 20px;border-top:1px solid var(--border)}
-.logout-btn{color:var(--danger);cursor:pointer;font-size:12px;background:none;border:none}
-.main{margin-left:200px;padding:24px}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:220px;background:var(--bg-card);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 0;z-index:10;transition:background .2s,border-color .2s}
+.sidebar-brand{padding:0 20px 16px;font-size:15px;font-weight:700;border-bottom:1px solid var(--border-light);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.sidebar-brand svg{width:18px;height:18px;flex-shrink:0}
+.nav-item{padding:10px 20px;cursor:pointer;color:var(--fg-muted);transition:.15s;display:flex;align-items:center;gap:10px;font-size:13px;font-weight:500;border-radius:0}
+.nav-item:hover{color:var(--fg);background:var(--bg-hover)}
+.nav-item.active{color:var(--accent);background:var(--bg-hover);font-weight:600;border-right:3px solid var(--accent)}
+.nav-item svg{width:16px;height:16px;flex-shrink:0;stroke-width:1.8}
+.sidebar-footer{margin-top:auto;padding:12px 20px;border-top:1px solid var(--border-light);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.theme-toggle{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--fg-muted);transition:background .15s,color .15s}
+.theme-toggle:hover{background:var(--bg-hover);color:var(--fg)}
+.theme-toggle svg{width:16px;height:16px;stroke-width:1.8}
+.logout-btn{color:var(--danger);cursor:pointer;font-size:12px;font-weight:500;background:none;border:none;transition:opacity .15s}
+.logout-btn:hover{opacity:.7}
+.main{margin-left:220px;padding:28px;max-width:1280px}
 .page{display:none}
-.page.active{display:block}
-.page-title{font-size:18px;font-weight:600;margin-bottom:20px}
-/* 卡片 */
-.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px}
-.card-title{font-size:14px;font-weight:600;margin-bottom:14px;color:var(--text)}
-/* 网格 */
-.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:20px}
-.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
-.stat-label{font-size:12px;color:var(--text2);margin-bottom:6px}
-.stat-value{font-size:24px;font-weight:600}
-.stat-sub{font-size:11px;color:var(--text2);margin-top:4px}
-/* 表格 */
+.page.active{display:block;animation:fadeIn .2s ease}
+.page-title{font-size:22px;font-weight:700;margin-bottom:20px;letter-spacing:-.02em}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* ========== 卡片 ========== */
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-xl);padding:20px;margin-bottom:16px;transition:background .2s,border-color .2s}
+.card-title{font-size:14px;font-weight:600;margin-bottom:14px;color:var(--fg)}
+
+/* ========== 统计网格 ========== */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-xl);padding:16px 18px;transition:background .2s,border-color .2s}
+.stat-label{font-size:12px;color:var(--fg-muted);margin-bottom:6px}
+.stat-value{font-size:26px;font-weight:700;line-height:1;letter-spacing:-.02em}
+.stat-sub{font-size:11px;color:var(--fg-subtle);margin-top:4px}
+
+/* ========== 表格 ========== */
+.table-wrap{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-xl);overflow:auto;transition:background .2s,border-color .2s}
 table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-weight:500;white-space:nowrap}
-td{padding:8px 10px;border-bottom:1px solid var(--border);word-break:break-all}
-tr:hover{background:rgba(255,255,255,.02)}
-/* 按钮 */
-.btn{padding:6px 14px;border-radius:var(--radius);border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer;font-size:12px;transition:.15s;white-space:nowrap}
-.btn:hover{border-color:var(--accent)}
-.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
-.btn-primary:hover{opacity:.85}
-.btn-danger{color:var(--danger);border-color:var(--danger)}
-.btn-danger:hover{background:var(--danger);color:#fff}
-.btn-sm{padding:3px 8px;font-size:11px}
+th{text-align:left;padding:10px 14px;color:var(--fg-muted);font-weight:500;font-size:11px;letter-spacing:.02em;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid var(--border-light);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg-hover)}
+
+/* ========== 按钮 ========== */
+.btn{height:32px;padding:0 14px;border-radius:999px;border:1px solid var(--border);background:var(--bg-card);color:var(--fg);cursor:pointer;font-size:13px;font-weight:500;transition:background .15s,border-color .15s,opacity .15s;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn:hover{background:var(--bg-hover);border-color:var(--fg-subtle)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);font-weight:600}
+.btn-primary:hover{background:var(--accent-hover);border-color:var(--accent-hover);opacity:1}
+.btn-danger{color:var(--danger);border-color:var(--danger);background:transparent}
+.btn-danger:hover{background:var(--danger);color:var(--accent-fg);border-color:var(--danger)}
+.btn-sm{height:26px;padding:0 10px;font-size:12px}
 .btn:disabled{opacity:.4;cursor:not-allowed}
-/* 标签 */
-.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
-.tag-active{background:rgba(34,197,94,.15);color:var(--accent2)}
- tag-cooling{background:rgba(245,158,11,.15);color:var(--warn)}
-.tag-disabled{background:rgba(239,68,68,.15);color:var(--danger)}
-.tag-unauthorized{background:rgba(239,68,68,.1);color:var(--danger)}
-.tag-pool-basic{background:rgba(79,124,255,.15);color:var(--accent)}
-.tag-pool-super{background:rgba(168,85,247,.15);color:#a855f7}
-.tag-pool-heavy{background:rgba(245,158,11,.15);color:var(--warn)}
-/* 输入框 */
-input,textarea,select{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:8px 12px;font-size:13px;font-family:inherit}
-input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
-textarea{resize:vertical;min-height:100px}
-/* 工具栏 */
+
+/* ========== 标签 ========== */
+.tag{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;font-size:11px;font-weight:500;white-space:nowrap}
+.tag-active{background:var(--success-bg);color:var(--success)}
+.tag-cooling{background:var(--warn-bg);color:var(--warn)}
+.tag-disabled{background:var(--danger-bg);color:var(--danger)}
+.tag-unauthorized{background:var(--danger-bg);color:var(--danger)}
+.tag-pool-basic{background:var(--bg-surface);color:var(--fg-muted)}
+.tag-pool-super{background:var(--info-bg);color:var(--info)}
+.tag-pool-heavy{background:var(--warn-bg);color:var(--warn)}
+
+/* ========== 输入框 ========== */
+input,textarea,select{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--fg);padding:8px 12px;font-size:13px;font-family:inherit;transition:border-color .15s}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--fg-subtle)}
+input::placeholder,textarea::placeholder{color:var(--fg-subtle)}
+textarea{resize:vertical;min-height:80px;border-radius:10px}
+
+/* ========== 工具栏 ========== */
 .toolbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
-.toolbar input,.toolbar select{flex:1;min-width:120px}
-/* 弹窗 */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
-.modal-overlay.show{display:flex}
-.modal{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;width:480px;max-width:90vw;max-height:80vh;overflow-y:auto}
-.modal h3{margin-bottom:16px;font-size:16px}
+.toolbar input,.toolbar select{flex:1;min-width:120px;height:32px;border-radius:10px}
+
+/* ========== 弹窗 ========== */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:100;align-items:center;justify-content:center;opacity:0;transition:opacity .2s}
+.modal-overlay.show{display:flex;opacity:1}
+.modal{background:var(--bg-card);border-radius:var(--radius-xl);padding:24px;width:min(480px,92vw);max-height:80vh;overflow-y:auto;box-shadow:var(--shadow-lg);transform:scale(.96);transition:transform .2s}
+.modal-overlay.show .modal{transform:none}
+.modal h3{margin-bottom:16px;font-size:16px;font-weight:600}
 .modal-field{margin-bottom:12px}
-.modal-field label{display:block;font-size:12px;color:var(--text2);margin-bottom:4px}
+.modal-field label{display:block;font-size:12px;color:var(--fg-muted);margin-bottom:4px}
 .modal-field input,.modal-field select{width:100%}
 .modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
-/* Toast */
+
+/* ========== Toast ========== */
 #toast{position:fixed;bottom:24px;right:24px;z-index:200;display:flex;flex-direction:column;gap:8px}
-.toast-msg{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px 16px;font-size:13px;animation:slideIn .2s;max-width:360px}
-.toast-ok{border-left:3px solid var(--accent2)}
+.toast-msg{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px 16px;font-size:13px;animation:slideIn .25s cubic-bezier(.16,1,.3,1);max-width:360px;box-shadow:var(--shadow)}
+.toast-ok{border-left:3px solid var(--success)}
 .toast-err{border-left:3px solid var(--danger)}
-@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:none;opacity:1}}
-/* 进度条 */
-.progress-bar{width:100%;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
-.progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .3s}
-/* JSON 编辑器 */
-.json-editor{width:100%;min-height:400px;font-family:'Fira Code',Consolas,monospace;font-size:12px;line-height:1.5;tab-size:2}
-/* 配置表单 */
-.config-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:20px}
-.form-section{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
-.form-section-title{font-size:13px;font-weight:600;color:var(--accent);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+@keyframes slideIn{from{transform:translateY(12px) scale(.96);opacity:0}to{transform:none;opacity:1}}
+
+/* ========== 进度条 ========== */
+.progress-bar{width:100%;height:5px;background:var(--bg-surface);border-radius:999px;overflow:hidden}
+.progress-fill{height:100%;background:var(--accent);border-radius:999px;transition:width .3s}
+
+/* ========== 配置表单 ========== */
+.config-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:16px}
+.form-section{background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--radius-xl);padding:16px;transition:background .2s,border-color .2s}
+.form-section-title{font-size:13px;font-weight:600;color:var(--fg);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
 .form-row{margin-bottom:12px}
-.form-row label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px}
+.form-row label{display:block;font-size:12px;color:var(--fg-muted);margin-bottom:5px}
 .form-row input,.form-row select,.form-row textarea{width:100%}
 .form-row.inline{display:flex;align-items:center}
-.form-row.inline label{margin-bottom:0;color:var(--text)}
+.form-row.inline label{margin-bottom:0;color:var(--fg)}
 .form-row.inline input{width:auto;margin-right:6px}
-/* 选项卡 */
+
+/* ========== 选项卡 ========== */
 .tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border)}
-.tab{padding:8px 16px;cursor:pointer;color:var(--text2);font-size:13px;border-bottom:2px solid transparent;transition:.15s}
-.tab:hover{color:var(--text)}
-.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
-/* 复选框 */
-.checkbox{display:flex;align-items:center;gap:6px;cursor:pointer}
-.checkbox input{width:auto}
-/* 响应式 */
-@media(max-width:768px){.sidebar{width:60px}.nav-item span{display:none}.main{margin-left:60px}}
+.tab{height:32px;padding:0 14px;cursor:pointer;color:var(--fg-muted);font-size:13px;font-weight:500;border-radius:999px;border-bottom:2px solid transparent;transition:background .15s,color .15s;display:flex;align-items:center}
+.tab:hover{color:var(--fg);background:var(--bg-hover)}
+.tab.active{color:var(--accent);font-weight:600;border-bottom-color:var(--accent);border-radius:0}
+
+/* ========== 复选框 ========== */
+.checkbox{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px}
+.checkbox input{width:auto;border-radius:4px}
+
+/* ========== 日志 ========== */
+.log-viewer{font-family:'Fira Code',Consolas,monospace;font-size:12px;line-height:1.7;max-height:600px;overflow:auto;padding:14px;white-space:pre-wrap;word-break:break-all}
+
+/* ========== 响应式 ========== */
+@media(max-width:768px){
+  .sidebar{width:60px}.nav-item span{display:none}.sidebar-brand span{display:none}.sidebar-footer .logout-btn{display:none}
+  .main{margin-left:60px;padding:16px}
+  .config-form{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
 <!-- 登录页 -->
 <div id="login-screen">
-<div class="login-box">
-<h1>🔧 Grok2API 管理面板</h1>
-<input type="password" id="login-key" placeholder="输入管理密钥 (app_key)" onkeydown="if(event.key==='Enter')doLogin()">
-<button onclick="doLogin()">登录</button>
+<div class="login-card">
+<div class="login-brand">Grok2API</div>
+<div class="login-title">管理后台</div>
+<div class="login-subtitle">请输入后台密码以继续</div>
+<div class="login-form">
+<input type="password" class="login-input" id="login-key" placeholder="输入管理密钥 (app_key)" onkeydown="if(event.key==='Enter')doLogin()">
+<button class="login-btn" onclick="doLogin()">继续</button>
+</div>
 <div class="login-err" id="login-err">密钥错误，请重试</div>
 </div>
 </div>
 <!-- 主应用 -->
 <div id="app">
 <div class="sidebar">
-<div class="sidebar-logo">🔧 Grok2API</div>
-<div class="nav-item active" onclick="navTo('dashboard')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>仪表盘</span></div>
-<div class="nav-item" onclick="navTo('accounts')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg><span>账号管理</span></div>
-<div class="nav-item" onclick="navTo('config')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>配置管理</span></div>
-<div class="nav-item" onclick="navTo('video')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg><span>视频任务</span></div>
-<div class="nav-item" onclick="navTo('cache')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg><span>缓存管理</span></div>
-<div class="nav-item" onclick="navTo('test')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/></svg><span>API 测试</span></div>
-<div class="nav-item" onclick="navTo('logs')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><span>日志查看</span></div>
+<div class="sidebar-brand"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.5 2.87 8.32 6.84 9.67.5.1.68-.22.68-.48 0-.24-.01-.86-.01-1.69-2.78.62-3.37-1.37-3.37-1.37-.45-1.17-1.11-1.48-1.11-1.48-.91-.64.07-.63.07-.63 1.01.07 1.54 1.06 1.54 1.06.9 1.58 2.36 1.12 2.94.86.09-.67.35-1.12.63-1.38-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05A9.3 9.3 0 0 1 12 6.79c.85 0 1.7.12 2.5.36 1.9-1.32 2.74-1.05 2.74-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.64 1.03 2.76 0 3.94-2.34 4.81-4.58 5.06.36.32.68.95.68 1.92 0 1.38-.01 2.49-.01 2.83 0 .26.18.58.69.48A10.05 10.05 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z"/></svg><span>Grok2API</span></div>
+<div class="nav-item active" onclick="navTo('dashboard')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>仪表盘</span></div>
+<div class="nav-item" onclick="navTo('accounts')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg><span>账号管理</span></div>
+<div class="nav-item" onclick="navTo('config')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span>配置管理</span></div>
+<div class="nav-item" onclick="navTo('video')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg><span>视频任务</span></div>
+<div class="nav-item" onclick="navTo('cache')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg><span>缓存管理</span></div>
+<div class="nav-item" onclick="navTo('test')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/></svg><span>API 测试</span></div>
+<div class="nav-item" onclick="navTo('logs')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg><span>日志查看</span></div>
 <div class="sidebar-footer">
+<button class="theme-toggle" onclick="toggleTheme()" title="切换主题" id="theme-toggle-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></button>
 <button class="logout-btn" onclick="doLogout()">退出登录</button>
 </div>
 </div>
@@ -174,14 +243,14 @@ textarea{resize:vertical;min-height:100px}
 </select>
 <input type="text" id="acc-search" placeholder="搜索 token..." oninput="renderAccounts()">
 </div>
-<div class="card" style="padding:0;overflow:auto">
+<div class="table-wrap">
 <table>
 <thead><tr><th><input type="checkbox" id="acc-select-all" onchange="toggleSelectAll(this)"></th><th>Token</th><th>池</th><th>状态</th><th>额度</th><th>使用次数</th><th>最后使用</th><th>操作</th></tr></thead>
 <tbody id="acc-tbody"></tbody>
 </table>
 </div>
 <div id="acc-batch-bar" style="display:none;margin-top:10px;display:flex;gap:8px;align-items:center">
-<span id="acc-selected-count" style="font-size:12px;color:var(--text2)"></span>
+<span id="acc-selected-count" style="font-size:12px;color:var(--fg-muted)"></span>
 <button class="btn btn-sm" onclick="batchToggle(true)">启用</button>
 <button class="btn btn-sm" onclick="batchToggle(false)">禁用</button>
 <button class="btn btn-sm" onclick="batchRefresh()">刷新额度</button>
@@ -257,9 +326,9 @@ textarea{resize:vertical;min-height:100px}
 <div class="page-title">视频任务</div>
 <div class="toolbar">
 <button class="btn" onclick="loadVideoJobs()">刷新</button>
-<span style="font-size:12px;color:var(--text2)">视频任务存储在内存中，重启后清空</span>
+<span style="font-size:12px;color:var(--fg-muted)">视频任务存储在内存中，重启后清空</span>
 </div>
-<div class="card" style="padding:0;overflow:auto">
+<div class="table-wrap">
 <table>
 <thead><tr><th>任务ID</th><th>状态</th><th>进度</th><th>模型</th><th>提示词</th><th>秒数</th><th>视频URL</th><th>创建时间</th></tr></thead>
 <tbody id="video-tbody"></tbody>
@@ -278,7 +347,7 @@ textarea{resize:vertical;min-height:100px}
 <button class="btn btn-danger" onclick="clearCache()">清空当前类型缓存</button>
 <button class="btn" onclick="loadCacheList()">刷新列表</button>
 </div>
-<div class="card" style="padding:0;overflow:auto;max-height:500px">
+<div class="table-wrap" style="max-height:500px">
 <table>
 <thead><tr><th>文件名</th><th>大小</th><th>修改时间</th><th>操作</th></tr></thead>
 <tbody id="cache-tbody"></tbody>
@@ -365,7 +434,7 @@ textarea{resize:vertical;min-height:100px}
 <label class="checkbox"><input type="checkbox" id="log-auto-refresh" onchange="toggleLogAutoRefresh()"> 自动刷新 (3秒)</label>
 </div>
 <div class="card" style="padding:0">
-<div id="log-content" style="font-family:'Fira Code',Consolas,monospace;font-size:12px;line-height:1.6;max-height:600px;overflow:auto;padding:12px;white-space:pre-wrap;word-break:break-all"></div>
+<div id="log-content" class="log-viewer"></div>
 </div>
 </div>
 </div>
@@ -386,6 +455,25 @@ let VIDEO_JOBS=[];
 let VIDEO_REFRESH_TIMER=null;
 let LOG_DATA={lines:[],files:[],current:''};
 let LOG_REFRESH_TIMER=null;
+
+// ========== 主题切换 ==========
+function toggleTheme(){
+  const html=document.documentElement;
+  const next=html.getAttribute('data-theme')==='light'?'dark':'light';
+  html.setAttribute('data-theme',next);
+  localStorage.setItem('theme',next);
+  updateThemeIcon(next);
+}
+function updateThemeIcon(theme){
+  const btn=document.getElementById('theme-toggle-btn');
+  if(!btn)return;
+  if(theme==='dark'){
+    btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+  }else{
+    btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+  }
+}
+(function(){const saved=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',saved);})();
 
 // ========== 工具函数 ==========
 function api(path,opts={}){
@@ -443,6 +531,7 @@ function doLogin(){
   api('/admin/api/verify').then(()=>{
     document.getElementById('login-screen').style.display='none';
     document.getElementById('app').style.display='block';
+    updateThemeIcon(localStorage.getItem('theme')||'light');
     loadDashboard();
   }).catch(()=>{
     document.getElementById('login-err').style.display='block';
@@ -455,7 +544,6 @@ function doLogout(){
   localStorage.removeItem('admin_key');
   location.reload();
 }
-// 自动登录
 (function(){
   const saved=localStorage.getItem('admin_key');
   if(saved){
@@ -463,6 +551,7 @@ function doLogout(){
     api('/admin/api/verify').then(()=>{
       document.getElementById('login-screen').style.display='none';
       document.getElementById('app').style.display='block';
+      updateThemeIcon(localStorage.getItem('theme')||'light');
       loadDashboard();
     }).catch(()=>{localStorage.removeItem('admin_key')});
   }
@@ -519,7 +608,6 @@ function loadDashboard(){
       html+=`<div class="stat-card"><div class="stat-label">活跃账号</div><div class="stat-value">${statuses.active||0}</div></div>`;
       html+=`<div class="stat-card"><div class="stat-label">冷却中</div><div class="stat-value">${statuses.cooling||0}</div></div>`;
       html+=`<div class="stat-card"><div class="stat-label">已禁用</div><div class="stat-value">${statuses.disabled||0}</div></div>`;
-      // 池分布
       let poolHtml='';
       Object.entries(pools).forEach(([k,v])=>{
         poolHtml+=`<div style="text-align:center"><div class="stat-value" style="font-size:20px">${v}</div><div class="stat-sub">${k}</div></div>`;
@@ -527,7 +615,6 @@ function loadDashboard(){
       document.getElementById('pool-dist').innerHTML=poolHtml;
     }
     document.getElementById('dash-stats').innerHTML=html;
-    // 缓存概览
     if(cache){
       const img=cache.local_image||{},vid=cache.local_video||{};
       document.getElementById('dash-cache').innerHTML=`
@@ -554,7 +641,7 @@ function renderAccounts(){
   if(search)filtered=filtered.filter(a=>a.token.toLowerCase().includes(search));
   let html='';
   if(filtered.length===0){
-    html='<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:20px">暂无数据</td></tr>';
+    html='<tr><td colspan="8" style="text-align:center;color:var(--fg-muted);padding:40px">暂无数据</td></tr>';
   }
   filtered.forEach(a=>{
     let quotaHtml='';
@@ -664,7 +751,6 @@ function batchNSFW(enable){
 }
 function copyToken(token){
   navigator.clipboard.writeText(token).then(()=>toast('Token 已复制')).catch(()=>{
-    // 回退方案：创建临时 input
     const el=document.createElement('input');el.value=token;document.body.appendChild(el);el.select();
     try{document.execCommand('copy');toast('Token 已复制')}catch(e){toast('复制失败',false)}
     document.body.removeChild(el);
@@ -753,7 +839,7 @@ function loadVideoJobs(){
 function renderVideoJobs(){
   const tbody=document.getElementById('video-tbody');
   if(!VIDEO_JOBS.length){
-    tbody.innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:20px">暂无视频任务<br>通过 API 测试页面提交后可在此查看</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--fg-muted);padding:40px">暂无视频任务<br>通过 API 测试页面提交后可在此查看</td></tr>`;
     return;
   }
   let html='';
@@ -762,14 +848,14 @@ function renderVideoJobs(){
     const statusText={'queued':'排队中','in_progress':'生成中','completed':'完成','failed':'失败'}[j.status]||j.status;
     let urlHtml='-';
     if(j.video_url){
-      urlHtml=`<a href="${escapeHtml(j.video_url)}" target="_blank" style="color:var(--accent);font-size:11px">${escapeHtml(j.video_url.slice(0,60))}${j.video_url.length>60?'...':''}</a>`;
+      urlHtml=`<a href="${escapeHtml(j.video_url)}" target="_blank" style="color:var(--info);font-size:11px">${escapeHtml(j.video_url.slice(0,60))}${j.video_url.length>60?'...':''}</a>`;
     }
     html+=`<tr>
       <td style="font-family:monospace;font-size:12px">${escapeHtml(j.id)}</td>
       <td><span class="tag ${statusCls}">${statusText}</span></td>
       <td style="width:120px">
         <div class="progress-bar" style="margin-bottom:4px"><div class="progress-fill" style="width:${j.progress||0}%"></div></div>
-        <span style="font-size:11px;color:var(--text2)">${j.progress||0}%</span>
+        <span style="font-size:11px;color:var(--fg-muted)">${j.progress||0}%</span>
       </td>
       <td>${escapeHtml(j.model)}</td>
       <td>${escapeHtml(j.prompt)}</td>
@@ -794,7 +880,7 @@ function loadCacheStats(){
 }
 function switchCacheTab(tab,el){
   CACHE_TAB=tab;
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('#page-cache .tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   loadCacheList();
 }
@@ -802,7 +888,7 @@ function loadCacheList(){
   api('/admin/api/cache/list?cache_type='+CACHE_TAB).then(data=>{
     const items=data.items||[];
     let html='';
-    if(!items.length)html='<tr><td colspan="4" style="text-align:center;color:var(--text2);padding:20px">暂无文件</td></tr>';
+    if(!items.length)html='<tr><td colspan="4" style="text-align:center;color:var(--fg-muted);padding:40px">暂无文件</td></tr>';
     items.forEach(it=>{
       html+=`<tr><td>${escapeHtml(it.name)}</td><td>${fmtSize(it.size_bytes)}</td><td>${fmtTime(it.modified_at/1000)}</td><td><button class="btn btn-sm btn-danger" onclick="deleteCacheFile('${escapeHtml(it.name)}')">删除</button></td></tr>`;
     });
@@ -882,8 +968,8 @@ function testImage(){
   fetch('/v1/images/generations',{method:'POST',headers,body:JSON.stringify({model,prompt,n:1})}).then(r=>r.json()).then(data=>{
     if(data.data&&data.data[0]){
       const url=data.data[0].url||data.data[0].b64_json;
-      if(url.startsWith('http'))out.innerHTML=`<img src="${url}" style="max-width:100%;border-radius:8px">`;
-      else out.innerHTML=`<img src="data:image/png;base64,${url}" style="max-width:100%;border-radius:8px">`;
+      if(url.startsWith('http'))out.innerHTML=`<img src="${url}" style="max-width:100%;border-radius:14px">`;
+      else out.innerHTML=`<img src="data:image/png;base64,${url}" style="max-width:100%;border-radius:14px">`;
     }else out.innerHTML=JSON.stringify(data,null,2);
   }).catch(e=>out.innerHTML='错误: '+e.message);
 }
@@ -896,11 +982,7 @@ function testVideo(){
   out.innerHTML='提交中...';
   const headers={'Content-Type':'application/json'};
   if(ADMIN_KEY)headers['Authorization']='Bearer '+ADMIN_KEY;
-  const formData=new FormData();
-  formData.append('model',model);
-  formData.append('prompt',prompt);
-  formData.append('seconds',seconds);
-  fetch('/v1/videos',{method:'POST',headers:ADMIN_KEY?{'Authorization':'Bearer '+ADMIN_KEY}:{},body:formData}).then(r=>r.json()).then(data=>{
+  fetch('/v1/videos',{method:'POST',headers,body:JSON.stringify({model,prompt,seconds})}).then(r=>r.json()).then(data=>{
     if(data.id){
       out.innerHTML=`任务已提交: <strong>${data.id}</strong><br>状态: ${data.status}<br><button class="btn btn-sm" onclick="pollVideo('${data.id}')">轮询状态</button><div id="vid-poll-result" style="margin-top:8px"></div>`;
     }else out.innerHTML=JSON.stringify(data,null,2);
@@ -912,7 +994,7 @@ function pollVideo(id){
   fetch('/v1/videos/'+id,{headers}).then(r=>r.json()).then(data=>{
     const el=document.getElementById('vid-poll-result');
     if(data.status==='completed'){
-      el.innerHTML=`<span class="tag tag-active">完成</span><br><video controls src="${data.video_url}" style="max-width:100%;margin-top:8px;border-radius:8px"></video>`;
+      el.innerHTML=`<span class="tag tag-active">完成</span><br><video controls src="${data.video_url}" style="max-width:100%;margin-top:8px;border-radius:14px"></video>`;
     }else if(data.status==='failed'){
       el.innerHTML=`<span class="tag tag-disabled">失败</span> ${data.error?.message||''}`;
     }else{
@@ -933,7 +1015,6 @@ function loadLogs(){
   if(file)url+='&file='+encodeURIComponent(file);
   api(url).then(data=>{
     LOG_DATA=data;
-    // 填充文件下拉
     if(sel){
       let opts='';
       (data.files||[]).forEach(f=>{
@@ -955,19 +1036,18 @@ function renderLogs(){
     lines=lines.filter(l=>l.includes('['+level+']'));
   }
   if(!lines.length){
-    el.innerHTML='<span style="color:var(--text2)">暂无日志记录</span>';
+    el.innerHTML='<span style="color:var(--fg-muted)">暂无日志记录</span>';
     return;
   }
   let html='';
   lines.forEach(l=>{
-    let color='var(--text)';
+    let color='var(--fg)';
     if(l.includes('[ERROR]'))color='var(--danger)';
     else if(l.includes('[WARN]'))color='var(--warn)';
-    else if(l.includes('[DEBUG]'))color='var(--text2)';
+    else if(l.includes('[DEBUG]'))color='var(--fg-subtle)';
     html+=`<div style="color:${color}">${escapeHtml(l)}</div>`;
   });
   el.innerHTML=html;
-  // 自动滚动到底部
   el.scrollTop=el.scrollHeight;
 }
 function toggleLogAutoRefresh(){

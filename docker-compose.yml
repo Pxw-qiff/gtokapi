@@ -12,3 +12,12 @@ services:
       - .env
     volumes:
       - ./data:/app/data
+    networks:
+      - default
+      - newapi-net
+
+networks:
+  default:
+  newapi-net:
+    external: true
+    name: newapi_new-api-network
