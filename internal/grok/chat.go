@@ -228,6 +228,9 @@ func NewStreamAdapter() *StreamAdapter {
 	}
 }
 
+// LastAssetID 返回跨帧累积的 assetId，用于 videoPostId 为空时 fallback。
+func (s *StreamAdapter) LastAssetID() string { return s.lastAssetID }
+
 // Feed parses one JSON data payload and returns 0-N events. If the payload
 // contains an in-band stream error, a non-nil *platform.AppError is returned
 // instead of (or in addition to) events.

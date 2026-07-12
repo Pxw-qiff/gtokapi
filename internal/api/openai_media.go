@@ -813,7 +813,7 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 		}
 
 		lastArtifact = artifact
-		logger.Infof("视频任务分段 %d/%d 完成: job=%s videoUrl=%s postId=%s", index+1, totalSegments, job.ID, truncate(artifact.VideoURL, 80), artifact.VideoPostID)
+		logger.Infof("视频任务分段 %d/%d 完成: job=%s videoUrl=%s postId=%q assetId=%q", index+1, totalSegments, job.ID, truncate(artifact.VideoURL, 80), artifact.VideoPostID, artifact.AssetID)
 		extendPostID = artifact.VideoPostID
 		if extendPostID == "" {
 			extendPostID = artifact.AssetID
@@ -870,9 +870,11 @@ func (s *Server) collectVideoSegment(bodyReader io.ReadCloser, segmentIndex, tot
 				}
 			}
 			if ev.Kind == grok.EventVideo {
+				logger.Infof("视频段 %d EventVideo: url=%s postId=%q", segmentIndex+1, truncate(ev.Content, 80), ev.ImageID)
 				return &grok.VideoArtifact{
 					VideoURL:    ev.Content,
 					VideoPostID: ev.ImageID,
+					AssetID:     adapter.LastAssetID(),
 				}, nil
 			}
 		}
