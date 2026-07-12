@@ -89,6 +89,16 @@ textarea{resize:vertical;min-height:100px}
 .progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .3s}
 /* JSON 编辑器 */
 .json-editor{width:100%;min-height:400px;font-family:'Fira Code',Consolas,monospace;font-size:12px;line-height:1.5;tab-size:2}
+/* 配置表单 */
+.config-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:20px}
+.form-section{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.form-section-title{font-size:13px;font-weight:600;color:var(--accent);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.form-row{margin-bottom:12px}
+.form-row label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px}
+.form-row input,.form-row select,.form-row textarea{width:100%}
+.form-row.inline{display:flex;align-items:center}
+.form-row.inline label{margin-bottom:0;color:var(--text)}
+.form-row.inline input{width:auto;margin-right:6px}
 /* 选项卡 */
 .tabs{display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border)}
 .tab{padding:8px 16px;cursor:pointer;color:var(--text2);font-size:13px;border-bottom:2px solid transparent;transition:.15s}
@@ -184,8 +194,60 @@ textarea{resize:vertical;min-height:100px}
 <button class="btn" onclick="loadConfig()">重新加载</button>
 </div>
 <div class="card">
-<div class="card-title">config.toml (运行时配置，保存后立即生效)</div>
-<textarea class="json-editor" id="config-editor" spellcheck="false"></textarea>
+<div class="card-title">可视化配置 (运行时配置，保存后立即生效)</div>
+<div id="config-form" class="config-form">
+  <div class="form-section">
+    <div class="form-section-title">访问控制</div>
+    <div class="form-row"><label>管理后台密码 (app_key)</label><input type="text" data-key="app.app_key"></div>
+    <div class="form-row"><label>应用访问地址 (app_url)</label><input type="text" data-key="app.app_url" placeholder="http://服务器IP:8000"></div>
+    <div class="form-row"><label>API 调用密钥 (api_key)</label><input type="text" data-key="app.api_key" placeholder="留空不鉴权"></div>
+  </div>
+  <div class="form-section">
+    <div class="form-section-title">应用功能</div>
+    <div class="form-row inline"><label class="checkbox"><input type="checkbox" data-key="features.temporary"> 启用临时对话</label></div>
+    <div class="form-row inline"><label class="checkbox"><input type="checkbox" data-key="features.memory"> 启用会话记忆</label></div>
+    <div class="form-row inline"><label class="checkbox"><input type="checkbox" data-key="features.stream"> 默认流式响应</label></div>
+    <div class="form-row inline"><label class="checkbox"><input type="checkbox" data-key="features.thinking"> 输出思考过程</label></div>
+    <div class="form-row inline"><label class="checkbox"><input type="checkbox" data-key="features.auto_chat_mode_fallback"> auto 模型额度耗尽自动降级</label></div>
+    <div class="form-row"><label>图片返回格式</label><select data-key="features.image_format"><option value="grok_url">grok_url (直返 Grok URL)</option><option value="local_url">local_url (下载到本地代理)</option><option value="base64">base64 (Data URI)</option></select></div>
+    <div class="form-row"><label>视频返回格式</label><select data-key="features.video_format"><option value="grok_url">grok_url (直返 Grok URL)</option><option value="local_url">local_url (下载到本地代理)</option></select></div>
+    <div class="form-row"><label>全局附加指令</label><textarea data-key="features.custom_instruction" rows="3"></textarea></div>
+  </div>
+  <div class="form-section">
+    <div class="form-section-title">本地缓存</div>
+    <div class="form-row"><label>图片缓存上限 (MB, 0=不限制)</label><input type="number" data-key="cache.local.image_max_mb" min="0"></div>
+    <div class="form-row"><label>视频缓存上限 (MB, 0=不限制)</label><input type="number" data-key="cache.local.video_max_mb" min="0"></div>
+  </div>
+  <div class="form-section">
+    <div class="form-section-title">代理配置</div>
+    <div class="form-row"><label>出口代理 URL</label><input type="text" data-key="proxy.egress.proxy_url" placeholder="http://127.0.0.1:7890"></div>
+    <div class="form-row"><label>Cloudflare Cookie (cf_cookies)</label><textarea data-key="proxy.clearance.cf_cookies" rows="2"></textarea></div>
+    <div class="form-row"><label>User-Agent</label><input type="text" data-key="proxy.clearance.user_agent"></div>
+    <div class="form-row"><label>Statsig Seed</label><input type="text" data-key="proxy.clearance.statsig_seed"></div>
+    <div class="form-row"><label>Statsig HEX</label><input type="text" data-key="proxy.clearance.statsig_hex"></div>
+    <div class="form-row inline"><label class="checkbox"><input type="checkbox" data-key="proxy.clearance.statsig_from_html"> 从 grok.com HTML 自动获取 Statsig</label></div>
+  </div>
+  <div class="form-section">
+    <div class="form-section-title">重试策略</div>
+    <div class="form-row"><label>最大重试次数</label><input type="number" data-key="retry.max_retries" min="0"></div>
+    <div class="form-row"><label>触发重试状态码 (逗号分隔)</label><input type="text" data-key="retry.on_codes" placeholder="429,401,503"></div>
+  </div>
+  <div class="form-section">
+    <div class="form-section-title">账号管理</div>
+    <div class="form-row inline"><label class="checkbox"><input type="checkbox" data-key="account.refresh.enabled"> 启用配额刷新模式</label></div>
+    <div class="form-row"><label>basic 刷新间隔 (秒)</label><input type="number" data-key="account.refresh.basic_interval_sec" min="0"></div>
+    <div class="form-row"><label>super 刷新间隔 (秒)</label><input type="number" data-key="account.refresh.super_interval_sec" min="0"></div>
+    <div class="form-row"><label>heavy 刷新间隔 (秒)</label><input type="number" data-key="account.refresh.heavy_interval_sec" min="0"></div>
+    <div class="form-row"><label>单号并发上限</label><input type="number" data-key="account.selection.max_inflight" min="1"></div>
+  </div>
+  <div class="form-section">
+    <div class="form-section-title">超时配置</div>
+    <div class="form-row"><label>上传超时 (秒)</label><input type="number" data-key="asset.upload_timeout" min="1"></div>
+    <div class="form-row"><label>列表超时 (秒)</label><input type="number" data-key="asset.list_timeout" min="1"></div>
+    <div class="form-row"><label>删除超时 (秒)</label><input type="number" data-key="asset.delete_timeout" min="1"></div>
+    <div class="form-row"><label>NSFW 超时 (秒)</label><input type="number" data-key="nsfw.timeout" min="1"></div>
+  </div>
+</div>
 </div>
 </div>
 <!-- 视频任务 -->
@@ -292,6 +354,7 @@ let ACCOUNTS=[];
 let CONFIG_RAW={};
 let CACHE_TAB='image';
 let VIDEO_JOBS=[];
+let VIDEO_REFRESH_TIMER=null;
 
 // ========== 工具函数 ==========
 function api(path,opts={}){
@@ -380,10 +443,11 @@ function navTo(page){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('page-'+page).classList.add('active');
   event.currentTarget.classList.add('active');
+  if(VIDEO_REFRESH_TIMER){clearInterval(VIDEO_REFRESH_TIMER);VIDEO_REFRESH_TIMER=null;}
   if(page==='dashboard')loadDashboard();
   if(page==='accounts')loadAccounts();
   if(page==='config')loadConfig();
-  if(page==='video')loadVideoJobs();
+  if(page==='video'){loadVideoJobs();VIDEO_REFRESH_TIMER=setInterval(loadVideoJobs,3000);}
   if(page==='cache')loadCacheStats();
 }
 
@@ -392,12 +456,19 @@ function loadDashboard(){
   Promise.all([
     api('/admin/api/status').catch(()=>null),
     api('/admin/api/cache').catch(()=>null),
-    api('/admin/api/tokens').catch(()=>null)
-  ]).then(([status,cache,tokens])=>{
+    api('/admin/api/tokens').catch(()=>null),
+    api('/admin/api/directory/stats').catch(()=>null)
+  ]).then(([status,cache,tokens,stats])=>{
     let html='';
     if(status){
       html+=`<div class="stat-card"><div class="stat-label">账号总数</div><div class="stat-value">${status.size||0}</div><div class="stat-sub">${status.selection_strategy||'-'}</div></div>`;
       html+=`<div class="stat-card"><div class="stat-label">版本号</div><div class="stat-value" style="font-size:16px">${status.revision||'-'}</div></div>`;
+    }
+    if(stats){
+      html+=`<div class="stat-card"><div class="stat-label">累计使用次数</div><div class="stat-value">${stats.total_use_count||0}</div><div class="stat-sub">基于 Directory Slot 统计</div></div>`;
+      html+=`<div class="stat-card"><div class="stat-label">累计失败次数</div><div class="stat-value">${stats.total_fail_count||0}</div></div>`;
+      html+=`<div class="stat-card"><div class="stat-label">当前并发</div><div class="stat-value">${stats.total_inflight||0}</div></div>`;
+      html+=`<div class="stat-card"><div class="stat-label">最后使用</div><div class="stat-value" style="font-size:16px">${fmtTime(stats.last_use_at)}</div></div>`;
     }
     if(cache){
       const img=cache.local_image||{};
@@ -584,13 +655,45 @@ function batchDelete(){
 function loadConfig(){
   api('/admin/api/config').then(data=>{
     CONFIG_RAW=data;
-    document.getElementById('config-editor').value=JSON.stringify(data,null,2);
+    document.querySelectorAll('#config-form [data-key]').forEach(el=>{
+      const key=el.dataset.key;
+      const value=getConfigValue(data,key);
+      if(el.type==='checkbox'){
+        el.checked=!!value;
+      }else if(value!==undefined&&value!==null){
+        el.value=value;
+      }else{
+        el.value='';
+      }
+    });
   }).catch(e=>toast('加载配置失败: '+e.message,false));
 }
+function getConfigValue(obj,key){
+  return key.split('.').reduce((o,k)=>o&&o[k]!==undefined?o[k]:undefined,obj);
+}
+function setConfigValue(obj,key,value){
+  const parts=key.split('.');
+  let cur=obj;
+  for(let i=0;i<parts.length-1;i++){
+    if(!cur[parts[i]]||typeof cur[parts[i]]!=='object')cur[parts[i]]={};
+    cur=cur[parts[i]];
+  }
+  cur[parts[parts.length-1]]=value;
+}
 function saveConfig(){
-  const text=document.getElementById('config-editor').value;
-  let patch;
-  try{patch=JSON.parse(text)}catch(e){return toast('JSON 格式错误: '+e.message,false)}
+  const patch={};
+  document.querySelectorAll('#config-form [data-key]').forEach(el=>{
+    const key=el.dataset.key;
+    let value;
+    if(el.type==='checkbox'){
+      value=el.checked;
+    }else if(el.type==='number'){
+      value=el.value===''?0:parseFloat(el.value);
+    }else{
+      value=el.value;
+    }
+    setConfigValue(patch,key,value);
+  });
   api('/admin/api/config',{method:'POST',body:JSON.stringify(patch)}).then(()=>{
     toast('配置已保存并生效');
   }).catch(e=>toast('保存失败: '+e.message,false));
@@ -598,8 +701,42 @@ function saveConfig(){
 
 // ========== 视频任务 ==========
 function loadVideoJobs(){
-  // 视频任务存储在内存中，无 API 端点，显示提示
-  document.getElementById('video-tbody').innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:20px">视频任务存储在内存中，通过 API 测试页面提交后可在此查看<br>使用 GET /v1/videos/{id} 查询任务状态</td></tr>';
+  api('/admin/api/video/jobs').then(data=>{
+    VIDEO_JOBS=data.jobs||[];
+    renderVideoJobs();
+  }).catch(e=>{
+    document.getElementById('video-tbody').innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:20px">加载失败: ${escapeHtml(e.message)}</td></tr>`;
+  });
+}
+function renderVideoJobs(){
+  const tbody=document.getElementById('video-tbody');
+  if(!VIDEO_JOBS.length){
+    tbody.innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:20px">暂无视频任务<br>通过 API 测试页面提交后可在此查看</td></tr>`;
+    return;
+  }
+  let html='';
+  VIDEO_JOBS.forEach(j=>{
+    const statusCls={'queued':'','in_progress':'tag-cooling','completed':'tag-active','failed':'tag-disabled'}[j.status]||'';
+    const statusText={'queued':'排队中','in_progress':'生成中','completed':'完成','failed':'失败'}[j.status]||j.status;
+    let urlHtml='-';
+    if(j.video_url){
+      urlHtml=`<a href="${escapeHtml(j.video_url)}" target="_blank" style="color:var(--accent);font-size:11px">${escapeHtml(j.video_url.slice(0,60))}${j.video_url.length>60?'...':''}</a>`;
+    }
+    html+=`<tr>
+      <td style="font-family:monospace;font-size:12px">${escapeHtml(j.id)}</td>
+      <td><span class="tag ${statusCls}">${statusText}</span></td>
+      <td style="width:120px">
+        <div class="progress-bar" style="margin-bottom:4px"><div class="progress-fill" style="width:${j.progress||0}%"></div></div>
+        <span style="font-size:11px;color:var(--text2)">${j.progress||0}%</span>
+      </td>
+      <td>${escapeHtml(j.model)}</td>
+      <td>${escapeHtml(j.prompt)}</td>
+      <td>${j.seconds||'-'}s</td>
+      <td>${urlHtml}</td>
+      <td>${fmtTime(j.created_at)}</td>
+    </tr>`;
+  });
+  tbody.innerHTML=html;
 }
 
 // ========== 缓存管理 ==========

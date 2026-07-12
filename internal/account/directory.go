@@ -17,6 +17,7 @@ type Slot struct {
 	Quota        QuotaSet
 	Inflight     int
 	FailCount    int
+	UseCount     int
 	Health       float64
 	LastUseAt    int64
 	LastFailAt   int64
@@ -147,6 +148,7 @@ func (d *Directory) upsertLocked(rec *Record) {
 		Health:     1.0,
 		Inflight:   0,
 		FailCount:  rec.UsageFailCount,
+		UseCount:   rec.UsageUseCount,
 		LastUseAt:  ptrVal(rec.LastUseAt),
 		LastFailAt: ptrVal(rec.LastFailAt),
 		Tags:       rec.Tags,
@@ -451,6 +453,37 @@ func (d *Directory) Snapshot() []*Slot {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Token < out[j].Token })
 	return out
+}
+
+// SlotStats returns aggregate runtime statistics across all in-memory slots.
+func (d *Directory) SlotStats() map[string]any {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	statusCounts := map[string]int{}
+	poolCounts := map[string]int{}
+	inflight := 0
+	useCount := 0
+	failCount := 0
+	var lastUseAt int64
+	for _, s := range d.slots {
+		statusCounts[s.StatusID.String()]++
+		poolCounts[s.PoolID.Name()]++
+		inflight += s.Inflight
+		useCount += s.UseCount
+		failCount += s.FailCount
+		if s.LastUseAt > lastUseAt {
+			lastUseAt = s.LastUseAt
+		}
+	}
+	return map[string]any{
+		"total_slots":      len(d.slots),
+		"status_counts":    statusCounts,
+		"pool_counts":      poolCounts,
+		"total_inflight":   inflight,
+		"total_use_count":  useCount,
+		"total_fail_count": failCount,
+		"last_use_at":      lastUseAt,
+	}
 }
 
 // Size returns the number of active accounts.

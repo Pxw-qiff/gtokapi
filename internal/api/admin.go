@@ -42,6 +42,38 @@ func (s *Server) handleStatusGet(c *gin.Context) {
 	})
 }
 
+func (s *Server) handleDirectoryStats(c *gin.Context) {
+	if s.Directory == nil {
+		writeAppError(c, platform.NewAppError("directory not initialised", platform.ErrServer, "directory_not_initialised", http.StatusServiceUnavailable))
+		return
+	}
+	c.JSON(http.StatusOK, s.Directory.SlotStats())
+}
+
+func (s *Server) handleAdminVideoJobs(c *gin.Context) {
+	limit := parseIntQuery(c, "limit", 200)
+	if limit < 1 {
+		limit = 200
+	}
+	videoJobsMutex.Lock()
+	jobs := make([]*videoJob, 0, len(videoJobsMap))
+	for _, j := range videoJobsMap {
+		jobs = append(jobs, j)
+	}
+	videoJobsMutex.Unlock()
+	sort.Slice(jobs, func(i, j int) bool {
+		return jobs[i].CreatedAt > jobs[j].CreatedAt
+	})
+	if len(jobs) > limit {
+		jobs = jobs[:limit]
+	}
+	out := make([]map[string]any, 0, len(jobs))
+	for _, j := range jobs {
+		out = append(out, j.toDict())
+	}
+	c.JSON(http.StatusOK, gin.H{"jobs": out, "total": len(videoJobsMap)})
+}
+
 func (s *Server) handleSync(c *gin.Context) {
 	if s.Directory == nil {
 		writeAppError(c, platform.NewAppError("directory not initialised", platform.ErrServer, "directory_not_initialised", http.StatusServiceUnavailable))

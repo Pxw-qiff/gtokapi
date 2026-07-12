@@ -44,6 +44,22 @@ func (s Status) ID() StatusID {
 	return StatusIDActive
 }
 
+func (s StatusID) String() string {
+	switch s {
+	case StatusIDActive:
+		return "active"
+	case StatusIDCooling:
+		return "cooling"
+	case StatusIDExpired:
+		return "expired"
+	case StatusIDDisabled:
+		return "disabled"
+	case StatusIDDeleted:
+		return "deleted"
+	}
+	return "active"
+}
+
 // PoolID is the integer pool tier (0=basic, 1=super, 2=heavy).
 type PoolID int
 
