@@ -118,6 +118,7 @@ func (s *Server) Router() *gin.Engine {
 		admin.POST("/cache/clear", s.handleCacheClear)
 		admin.POST("/cache/item/delete", s.handleCacheItemDelete)
 		admin.POST("/cache/items/delete", s.handleCacheItemsDelete)
+		admin.GET("/logs", s.handleAdminLogs)
 	}
 
 	return engine

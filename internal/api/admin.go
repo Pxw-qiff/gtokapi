@@ -1221,6 +1221,84 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
+// --- Logs ---
+
+// handleAdminLogs 返回日志文件列表和指定文件的尾部 N 行。
+//
+// 【修改说明】
+// 修改背景：用户希望在管理面板直接查看运行日志，方便排查媒体下载等问题
+// 解决问题：新增 GET /admin/api/logs?file=xxx&lines=300 接口
+// 设计考虑：默认返回最新日志文件尾部 300 行；lines 上限 2000 防止响应过大
+func (s *Server) handleAdminLogs(c *gin.Context) {
+	logDir := platform.LogDir()
+	entries, err := os.ReadDir(logDir)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"files": []any{}, "lines": []string{}, "error": "日志目录不存在: " + logDir})
+		return
+	}
+
+	type fileInfo struct {
+		Name string `json:"name"`
+		Size int64  `json:"size"`
+	}
+	var files []fileInfo
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".log") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, fileInfo{Name: name, Size: info.Size()})
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Name > files[j].Name })
+
+	if len(files) == 0 {
+		c.JSON(http.StatusOK, gin.H{"files": []any{}, "lines": []string{}, "current": ""})
+		return
+	}
+
+	fileName := c.Query("file")
+	if fileName == "" {
+		fileName = files[0].Name
+	}
+
+	lines := clampInt(parseIntQuery(c, "lines", 300), 1, 2000)
+
+	// 安全检查：只允许读取日志目录下的 .log 文件
+	cleanName := filepath.Clean(fileName)
+	if strings.Contains(cleanName, "..") || !strings.HasSuffix(cleanName, ".log") {
+		writeAppError(c, platform.ValidationError("Invalid log file name", "file"))
+		return
+	}
+
+	logPath := filepath.Join(logDir, cleanName)
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"files": files, "lines": []string{}, "current": cleanName, "error": err.Error()})
+		return
+	}
+
+	allLines := strings.Split(string(content), "\n")
+	start := len(allLines) - lines
+	if start < 0 {
+		start = 0
+	}
+	tail := allLines[start:]
+
+	c.JSON(http.StatusOK, gin.H{
+		"files":   files,
+		"current": cleanName,
+		"lines":   tail,
+		"total":   len(allLines),
+	})
+}
+
 // _ unused imports to silence linter when paths evolve.
 var (
 	_ = filepath.Join
