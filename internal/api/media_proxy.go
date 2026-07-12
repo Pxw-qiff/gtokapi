@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -74,28 +73,18 @@ func localVideoURL(fileID string) string {
 	return fmt.Sprintf("%s/v1/files/video?id=%s", base, fileID)
 }
 
-// extractFileIDFromURL 从 Grok 资源 URL 中提取可用作本地文件 ID 的字符串。
-// 优先使用 URL 路径最后一段的主文件名，无法提取时用 SHA1 前 32 位。
+// extractFileIDFromURL 从 Grok 资源 URL 生成本地文件 ID。
+//
+// 【修改说明】
+// 修改背景：Grok 视频文件名为 generated_video.mp4，提取的 stem 不匹配 fileIDRE 正则（仅允许 hex）
+// 解决问题：始终用完整 URL 的 SHA1 前 32 位作为 file ID，保证唯一且为合法 hex 字符串
+// 设计考虑：不同 URL 生成不同 ID 避免冲突；相同 URL 生成相同 ID 实现幂等缓存
 func extractFileIDFromURL(rawURL string) string {
 	if rawURL == "" {
 		return ""
 	}
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		h := sha1.Sum([]byte(rawURL))
-		return hex.EncodeToString(h[:])[:32]
-	}
-	base := path.Base(u.Path)
-	if base == "" || base == "." || base == "/" {
-		h := sha1.Sum([]byte(rawURL))
-		return hex.EncodeToString(h[:])[:32]
-	}
-	stem := strings.SplitN(base, ".", 2)[0]
-	if stem == "" {
-		h := sha1.Sum([]byte(rawURL))
-		return hex.EncodeToString(h[:])[:32]
-	}
-	return stem
+	h := sha1.Sum([]byte(rawURL))
+	return hex.EncodeToString(h[:])[:32]
 }
 
 // downloadMedia 下载远程媒体资源到本地。
