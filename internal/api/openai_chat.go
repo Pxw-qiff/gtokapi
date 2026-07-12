@@ -180,7 +180,7 @@ func (s *Server) runGrokChatOnce(w http.ResponseWriter, r *http.Request, lease *
 
 	bodyReader, err := s.Transport.PostStream(ctx, targetURL, lease.Token, body)
 	if err != nil {
-		logger.Warnf("聊天上游请求失败: model=%s url=%s token=%s error=%v", modelName, targetURL, platform.SanitizeToken(lease.Token), err)
+		logger.Warnf("聊天上游请求失败: model=%s url=%s token=%s error=%v body=%s", modelName, targetURL, platform.SanitizeToken(lease.Token), err, errBody(err))
 		// If responses endpoint fails, clear the conversation and fall back to
 		// creating a new one on the next attempt.
 		s.ConvTracker.Clear(lease.Token)
@@ -782,15 +782,17 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 		for i, imgURL := range imageURLs {
 			uploadResult, err := grok.UploadFromInput(ctx, s.Transport, token, imgURL)
 			if err != nil {
-				logger.Warnf("聊天视频参考图上传失败: index=%d error=%v", i+1, err)
+				logger.Warnf("聊天视频参考图上传失败: index=%d error=%v body=%s", i+1, err, errBody(err))
 				s.feedbackError(token, err, lease.ModeID)
 				writeAppError(c, platform.UpstreamError(fmt.Sprintf("reference image %d upload: %s", i+1, err.Error()), 502, ""))
 				return
 			}
-			contentURL := uploadResult.FileURI
-			if contentURL == "" {
-				logger.Warnf("聊天视频参考图上传无文件URI: index=%d", i+1)
-				writeAppError(c, platform.UpstreamError(fmt.Sprintf("reference image %d upload returned no file URI", i+1), 502, ""))
+			// 【修改说明】FileURI 可能是相对路径，需要用 ResolveUploadedAssetReference 转成绝对 URL
+			contentURL, err := grok.ResolveUploadedAssetReference(token, uploadResult.FileID, uploadResult.FileURI)
+			if err != nil {
+				logger.Warnf("聊天视频参考图URL解析失败: index=%d error=%v", i+1, err)
+				s.feedbackError(token, err, lease.ModeID)
+				writeAppError(c, platform.UpstreamError(fmt.Sprintf("reference image %d resolve: %s", i+1, err.Error()), 502, ""))
 				return
 			}
 			imgPostPayload := grok.BuildImagePostPayload(contentURL)
@@ -798,7 +800,7 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 			imgPostResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, imgPostBody,
 				grok.WithReferer("https://grok.com/imagine"))
 			if err != nil {
-				logger.Warnf("聊天视频参考图media post失败: index=%d error=%v", i+1, err)
+				logger.Warnf("聊天视频参考图media post失败: index=%d error=%v body=%s", i+1, err, errBody(err))
 				s.feedbackError(token, err, lease.ModeID)
 				writeAppError(c, platform.UpstreamError(fmt.Sprintf("image media post %d create: %s", i+1, err.Error()), 502, ""))
 				return
@@ -824,7 +826,7 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 		postResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, postBody,
 			grok.WithReferer("https://grok.com/imagine"))
 		if err != nil {
-			logger.Warnf("聊天视频media post创建失败: error=%v", err)
+			logger.Warnf("聊天视频media post创建失败: error=%v body=%s", err, errBody(err))
 			s.feedbackError(token, err, lease.ModeID)
 			writeAppError(c, platform.UpstreamError("media post create: "+err.Error(), 502, ""))
 			return
@@ -878,7 +880,7 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 		bodyReader, err := s.Transport.PostStream(ctx, grok.Chat, token, body,
 			grok.WithReferer(referer))
 		if err != nil {
-			logger.Warnf("聊天视频分段 %d 上游请求失败: error=%v", index+1, err)
+			logger.Warnf("聊天视频分段 %d 上游请求失败: error=%v body=%s", index+1, err, errBody(err))
 			s.feedbackError(token, err, lease.ModeID)
 			if stream {
 				sw.writeOpenAIError(fmt.Sprintf("video segment %d: %s", index, err.Error()), "upstream_error", "video_generation_failed", "")

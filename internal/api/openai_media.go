@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -703,14 +704,15 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 		for i, imgURL := range imageURLs {
 			uploadResult, err := grok.UploadFromInput(ctx, s.Transport, token, imgURL)
 			if err != nil {
-				logger.Warnf("视频任务参考图上传失败: job=%s index=%d error=%v", job.ID, i+1, err)
+				logger.Warnf("视频任务参考图上传失败: job=%s index=%d error=%v body=%s", job.ID, i+1, err, errBody(err))
 				s.failVideoJob(job, fmt.Sprintf("reference image %d upload: %s", i+1, err.Error()))
 				return
 			}
-			contentURL := uploadResult.FileURI
-			if contentURL == "" {
-				logger.Warnf("视频任务参考图上传无文件URI: job=%s index=%d", job.ID, i+1)
-				s.failVideoJob(job, fmt.Sprintf("reference image %d upload returned no file URI", i+1))
+			// 【修改说明】FileURI 可能是相对路径，需要用 ResolveUploadedAssetReference 转成绝对 URL
+			contentURL, err := grok.ResolveUploadedAssetReference(token, uploadResult.FileID, uploadResult.FileURI)
+			if err != nil {
+				logger.Warnf("视频任务参考图URL解析失败: job=%s index=%d error=%v", job.ID, i+1, err)
+				s.failVideoJob(job, fmt.Sprintf("reference image %d resolve: %s", i+1, err.Error()))
 				return
 			}
 			imgPostPayload := grok.BuildImagePostPayload(contentURL)
@@ -718,7 +720,7 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 			imgPostResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, imgPostBody,
 				grok.WithReferer("https://grok.com/imagine"))
 			if err != nil {
-				logger.Warnf("视频任务参考图media post失败: job=%s index=%d error=%v", job.ID, i+1, err)
+				logger.Warnf("视频任务参考图media post失败: job=%s index=%d error=%v body=%s", job.ID, i+1, err, errBody(err))
 				s.failVideoJob(job, fmt.Sprintf("image media post %d create: %s", i+1, err.Error()))
 				return
 			}
@@ -748,7 +750,7 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 		postResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, postBody,
 			grok.WithReferer("https://grok.com/imagine"))
 		if err != nil {
-			logger.Warnf("视频任务media post创建失败: job=%s error=%v", job.ID, err)
+			logger.Warnf("视频任务media post创建失败: job=%s error=%v body=%s", job.ID, err, errBody(err))
 			s.failVideoJob(job, "media post create: "+err.Error())
 			return
 		}
@@ -792,7 +794,7 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 		bodyReader, err := s.Transport.PostStream(ctx, grok.Chat, token, body,
 			grok.WithReferer(referer))
 		if err != nil {
-			logger.Warnf("视频任务分段 %d 上游请求失败: job=%s error=%v", index+1, job.ID, err)
+			logger.Warnf("视频任务分段 %d 上游请求失败: job=%s error=%v body=%s", index+1, job.ID, err, errBody(err))
 			s.failVideoJob(job, fmt.Sprintf("video segment %d upstream: %s", index, err.Error()))
 			return
 		}
@@ -936,6 +938,15 @@ func isValidVideoLength(n int) bool {
 		return true
 	}
 	return false
+}
+
+// errBody 从 AppError 中提取 Body 字段，用于日志打印上游错误响应体。
+func errBody(err error) string {
+	var appErr *platform.AppError
+	if errors.As(err, &appErr) && appErr.Body != "" {
+		return appErr.Body
+	}
+	return ""
 }
 
 // truncate 截断字符串到指定长度，超长则加省略号。
