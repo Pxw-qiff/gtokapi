@@ -950,15 +950,16 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 			return
 		}
 
-		extendPostID = lastArtifact.VideoPostID
+		// 【修改说明】优先用 assetId 作为 extendPostId，因为 videoPostId 在参考图场景下可能不是可扩展的资产 ID
+		extendPostID = lastArtifact.AssetID
 		if extendPostID == "" {
-			extendPostID = lastArtifact.AssetID
+			extendPostID = lastArtifact.VideoPostID
 		}
 		if extendPostID == "" {
 			extendPostID = parentPostID
 		}
 		elapsedSeconds += segmentLength
-		logger.Infof("聊天视频分段 %d/%d 完成: videoUrl=%s postId=%s", index+1, totalSegments, truncate(lastArtifact.VideoURL, 80), lastArtifact.VideoPostID)
+		logger.Infof("聊天视频分段 %d/%d 完成: videoUrl=%s postId=%s assetId=%s extendPostId=%s", index+1, totalSegments, truncate(lastArtifact.VideoURL, 80), lastArtifact.VideoPostID, lastArtifact.AssetID, extendPostID)
 	}
 
 	// 4. 返回结果

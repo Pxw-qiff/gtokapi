@@ -814,13 +814,15 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 
 		lastArtifact = artifact
 		logger.Infof("视频任务分段 %d/%d 完成: job=%s videoUrl=%s postId=%q assetId=%q", index+1, totalSegments, job.ID, truncate(artifact.VideoURL, 80), artifact.VideoPostID, artifact.AssetID)
-		extendPostID = artifact.VideoPostID
+		// 【修改说明】优先用 assetId 作为 extendPostId，因为 videoPostId 在参考图场景下可能不是可扩展的资产 ID
+		extendPostID = artifact.AssetID
 		if extendPostID == "" {
-			extendPostID = artifact.AssetID
+			extendPostID = artifact.VideoPostID
 		}
 		if extendPostID == "" {
 			extendPostID = parentPostID
 		}
+		logger.Infof("视频任务分段 %d extendPostId=%q", index+1, extendPostID)
 		elapsedSeconds += segmentLength
 	}
 
