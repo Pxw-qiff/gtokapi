@@ -527,9 +527,10 @@ function renderAccounts(){
   filtered.forEach(a=>{
     let quotaHtml='';
     if(a.quota){
+      const names={auto:'自动',fast:'快速',expert:'专家',heavy:'重型',console:'控制台'};
       const parts=[];
-      ['auto','fast','expert','heavy'].forEach(k=>{
-        if(a.quota[k])parts.push(`${k}:${a.quota[k].remaining}/${a.quota[k].total}`);
+      ['auto','fast','expert','heavy','console'].forEach(k=>{
+        if(a.quota[k])parts.push(`${names[k]||k}: ${a.quota[k].remaining}/${a.quota[k].total}`);
       });
       quotaHtml=parts.join('<br>')||'-';
     }
