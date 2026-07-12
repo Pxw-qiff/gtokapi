@@ -245,7 +245,7 @@ textarea{resize:vertical;min-height:80px;border-radius:10px}
 </div>
 <div class="table-wrap">
 <table>
-<thead><tr><th><input type="checkbox" id="acc-select-all" onchange="toggleSelectAll(this)"></th><th>Token</th><th>池</th><th>状态</th><th>额度</th><th>使用次数</th><th>最后使用</th><th>操作</th></tr></thead>
+<thead><tr><th><input type="checkbox" id="acc-select-all" onchange="toggleSelectAll(this)"></th><th>Token</th><th>池</th><th>状态</th><th>NSFW</th><th>额度</th><th>使用次数</th><th>最后使用</th><th>操作</th></tr></thead>
 <tbody id="acc-tbody"></tbody>
 </table>
 </div>
@@ -657,6 +657,7 @@ function renderAccounts(){
     html='<tr><td colspan="8" style="text-align:center;color:var(--fg-muted);padding:40px">暂无数据</td></tr>';
   }
   filtered.forEach(a=>{
+    const isNSFW=(a.tags||[]).includes('nsfw');
     let quotaHtml='';
     if(a.quota){
       const names={auto:'自动',fast:'快速',expert:'专家',heavy:'重型',console:'控制台'};
@@ -671,11 +672,13 @@ function renderAccounts(){
       <td title="${escapeHtml(a.token)}">${maskToken(a.token)} <button class="btn btn-sm" onclick="copyToken('${escapeHtml(a.token)}')" title="复制完整Token">复制</button></td>
       <td>${poolTag(a.pool)}</td>
       <td>${statusTag(a.status)}</td>
+      <td>${isNSFW?'<span class="tag tag-active">已开启</span>':'<span class="tag tag-disabled">未开启</span>'}</td>
       <td style="font-size:11px">${quotaHtml}</td>
       <td>${a.use_count||0}</td>
       <td>${fmtTime(a.last_used_at)}</td>
       <td>
         <button class="btn btn-sm" onclick="toggleToken('${escapeHtml(a.token)}',${a.status==='disabled'})">${a.status==='disabled'?'启用':'禁用'}</button>
+        <button class="btn btn-sm ${isNSFW?'btn-danger':''}" onclick="toggleNSFWOne('${escapeHtml(a.token)}',${!isNSFW})">${isNSFW?'关闭NSFW':'开启NSFW'}</button>
         <button class="btn btn-sm" onclick="showEditTokenModal('${escapeHtml(a.token)}','${a.pool}')">编辑</button>
         <button class="btn btn-sm btn-danger" onclick="deleteToken('${escapeHtml(a.token)}')">删除</button>
       </td>
@@ -760,6 +763,12 @@ function batchNSFW(enable){
   if(!tokens.length)return toast('请先选择账号',false);
   api('/admin/api/batch/nsfw?enabled='+enable,{method:'POST',body:JSON.stringify({tokens})}).then(()=>{
     toast('NSFW操作完成');loadAccounts();
+  }).catch(e=>toast('操作失败: '+e.message,false));
+}
+// 单个账号 NSFW 开关
+function toggleNSFWOne(token,enable){
+  api('/admin/api/batch/nsfw?enabled='+enable,{method:'POST',body:JSON.stringify({tokens:[token]})}).then(()=>{
+    toast(enable?'NSFW已开启':'NSFW已关闭');loadAccounts();
   }).catch(e=>toast('操作失败: '+e.message,false));
 }
 function copyToken(token){

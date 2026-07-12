@@ -202,6 +202,10 @@ type StreamAdapter struct {
 	ImageURLs         [][2]string // [(url, imageUuid), ...]
 	VideoURLs         [][2]string // [(url, videoPostId), ...]
 
+	// 【修改说明】跨帧累积 videoPostId 和 assetId，解决最终帧缺失 videoPostId 导致续写失败
+	lastVideoPostID string
+	lastAssetID     string
+
 	// Conversation tracking — populated from the first frames of conversations/new.
 	ConversationID string
 	LastResponseID string // userResponse.responseId from the current message
@@ -279,20 +283,30 @@ func (s *StreamAdapter) Feed(data []byte) ([]FrameEvent, *platform.AppError) {
 				Content: fmt.Sprintf("%d", progress),
 			})
 		}
-		videoPostID, _ := vsr["videoPostId"].(string)
-		if videoPostID == "" {
-			videoPostID, _ = vsr["videoId"].(string)
+		// 【修改说明】跨帧累积 videoPostId，与参考项目一致，避免最终帧缺失该字段
+		if v, ok := vsr["videoPostId"].(string); ok && v != "" {
+			s.lastVideoPostID = v
+		} else if v, ok := vsr["videoId"].(string); ok && v != "" {
+			s.lastVideoPostID = v
+		}
+		if v, ok := vsr["assetId"].(string); ok && v != "" {
+			s.lastAssetID = v
 		}
 		if progress >= 100 {
 			if moderated, _ := vsr["moderated"].(bool); !moderated {
 				videoURL, _ := vsr["videoUrl"].(string)
 				if videoURL != "" {
 					url := AbsolutizeVideoURL(videoURL)
-					s.VideoURLs = append(s.VideoURLs, [2]string{url, videoPostID})
+					// 使用累积的 videoPostId，fallback 到 assetId
+					postID := s.lastVideoPostID
+					if postID == "" {
+						postID = s.lastAssetID
+					}
+					s.VideoURLs = append(s.VideoURLs, [2]string{url, postID})
 					events = append(events, FrameEvent{
 						Kind:    EventVideo,
 						Content: url,
-						ImageID: videoPostID,
+						ImageID: postID,
 					})
 				}
 			}

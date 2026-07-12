@@ -649,10 +649,25 @@ func (s *Server) handleBatchNSFW(c *gin.Context) {
 
 func (s *Server) runNSFWOne(ctx context.Context, token string, enabled bool) error {
 	if enabled {
-		return grok.NSFWSequence(ctx, s.Transport, token)
+		if err := grok.NSFWSequence(ctx, s.Transport, token); err != nil {
+			return err
+		}
+	} else {
+		if _, err := grok.DisableNSFW(ctx, s.Transport, token); err != nil {
+			return err
+		}
 	}
-	_, err := grok.DisableNSFW(ctx, s.Transport, token)
-	return err
+	// 【修改说明】NSFW 操作成功后更新账号 tags，使前端能正确显示 NSFW 状态
+	if s.Repo != nil {
+		p := account.Patch{Token: token}
+		if enabled {
+			p.AddTags = []string{"nsfw"}
+		} else {
+			p.RemoveTags = []string{"nsfw"}
+		}
+		_, _ = s.Repo.PatchAccounts(ctx, []account.Patch{p})
+	}
+	return nil
 }
 
 func (s *Server) handleBatchRefresh(c *gin.Context) {
