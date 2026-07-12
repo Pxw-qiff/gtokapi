@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/aurora-develop/grok2api/internal/config"
+	"github.com/aurora-develop/grok2api/internal/logger"
 )
 
 // mediaProxy 提供将 Grok 远程资源下载到本地并返回本地代理 URL 的能力。
@@ -95,8 +97,13 @@ func extractFileIDFromURL(rawURL string) string {
 	return stem
 }
 
-// downloadMediaViaTransport 通过 Server.Transport 下载远程媒体资源。
-// 返回原始字节和 content-type（当前 Transport 未返回 content-type，固定返回空字符串）。
+// downloadMediaViaTransport 下载远程媒体资源到本地。
+//
+// 【修改说明】
+// 修改背景：原实现复用 Grok Transport（带 SSO cookie + Origin 头），CDN 下载会 403
+// 解决问题：改用标准 http.Client，仅设置 User-Agent，避免 Grok 专属头干扰 CDN 访问
+// 设计考虑：若配置了出口代理则同样走代理，确保容器网络可达 Grok CDN
+// 注意事项：下载失败时记录 warning 日志，便于排查缓存为空的原因
 func downloadMediaViaTransport(s *Server, rawURL string) ([]byte, string, error) {
 	if rawURL == "" {
 		return nil, "", fmt.Errorf("empty url")
@@ -104,18 +111,41 @@ func downloadMediaViaTransport(s *Server, rawURL string) ([]byte, string, error)
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	bodyReader, err := s.Transport.GetBytes(ctx, rawURL, "")
+	client := &http.Client{Timeout: 120 * time.Second}
+	if proxyURL := strings.TrimSpace(config.Global().GetStr("proxy.egress.proxy_url", "")); proxyURL != "" {
+		if p, err := url.Parse(proxyURL); err == nil {
+			client.Transport = &http.Transport{Proxy: http.ProxyURL(p)}
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
+		logger.Warnf("媒体下载构建请求失败: url=%s error=%v", rawURL, err)
 		return nil, "", err
 	}
-	defer bodyReader.Close()
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		logger.Warnf("媒体下载请求失败: url=%s error=%v", rawURL, err)
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		logger.Warnf("媒体下载状态码异常: url=%s status=%d", rawURL, resp.StatusCode)
+		return nil, "", fmt.Errorf("download returned %d", resp.StatusCode)
+	}
 
 	const maxSize = 200 << 20 // 200MB
-	body, err := io.ReadAll(io.LimitReader(bodyReader, maxSize))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSize))
 	if err != nil {
+		logger.Warnf("媒体下载读取失败: url=%s error=%v", rawURL, err)
 		return nil, "", err
 	}
-	return body, "", nil
+	contentType := resp.Header.Get("Content-Type")
+	logger.Infof("媒体下载成功: url=%s size=%d content_type=%s", rawURL, len(body), contentType)
+	return body, contentType, nil
 }
 
 // resolveImageURL 根据 image_format 把 Grok 图片 URL 转换成目标形式。
