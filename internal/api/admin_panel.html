@@ -340,8 +340,8 @@ textarea{resize:vertical;min-height:80px;border-radius:10px}
 <div class="page-title">缓存管理</div>
 <div class="stats-grid" id="cache-stats"></div>
 <div class="tabs">
-<div class="tab active" onclick="switchCacheTab('image',this)">图片缓存</div>
-<div class="tab" onclick="switchCacheTab('video',this)">视频缓存</div>
+<div class="tab active" onclick="switchCacheTab('video',this)">视频缓存</div>
+<div class="tab" onclick="switchCacheTab('image',this)">图片缓存</div>
 </div>
 <div class="toolbar">
 <button class="btn btn-danger" onclick="clearCache()">清空当前类型缓存</button>
@@ -450,7 +450,7 @@ textarea{resize:vertical;min-height:80px;border-radius:10px}
 let ADMIN_KEY='';
 let ACCOUNTS=[];
 let CONFIG_RAW={};
-let CACHE_TAB='image';
+let CACHE_TAB='video';
 let VIDEO_JOBS=[];
 let VIDEO_REFRESH_TIMER=null;
 let LOG_DATA={lines:[],files:[],current:''};
@@ -858,7 +858,7 @@ function renderVideoJobs(){
         <span style="font-size:11px;color:var(--fg-muted)">${j.progress||0}%</span>
       </td>
       <td>${escapeHtml(j.model)}</td>
-      <td>${escapeHtml(j.prompt)}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(j.prompt)}">${escapeHtml(j.prompt)}</td>
       <td>${j.seconds||'-'}s</td>
       <td>${urlHtml}</td>
       <td>${fmtTime(j.created_at)}</td>
@@ -890,7 +890,16 @@ function loadCacheList(){
     let html='';
     if(!items.length)html='<tr><td colspan="4" style="text-align:center;color:var(--fg-muted);padding:40px">暂无文件</td></tr>';
     items.forEach(it=>{
-      html+=`<tr><td>${escapeHtml(it.name)}</td><td>${fmtSize(it.size_bytes)}</td><td>${fmtTime(it.modified_at/1000)}</td><td><button class="btn btn-sm btn-danger" onclick="deleteCacheFile('${escapeHtml(it.name)}')">删除</button></td></tr>`;
+      const fileID=it.name.replace(/\.(mp4|jpg|png)$/,'');
+      const isVideo=it.name.endsWith('.mp4');
+      const isImage=it.name.endsWith('.jpg')||it.name.endsWith('.png');
+      let nameHtml=escapeHtml(it.name);
+      if(isVideo){
+        nameHtml=`<a href="/v1/files/video?id=${encodeURIComponent(fileID)}" target="_blank" style="color:var(--info);font-size:13px">${escapeHtml(it.name)}</a>`;
+      }else if(isImage){
+        nameHtml=`<a href="/v1/files/image?id=${encodeURIComponent(fileID)}" target="_blank" style="color:var(--info);font-size:13px">${escapeHtml(it.name)}</a>`;
+      }
+      html+=`<tr><td>${nameHtml}</td><td>${fmtSize(it.size_bytes)}</td><td>${fmtTime(it.modified_at/1000)}</td><td><button class="btn btn-sm btn-danger" onclick="deleteCacheFile('${escapeHtml(it.name)}')">删除</button></td></tr>`;
     });
     document.getElementById('cache-tbody').innerHTML=html;
   }).catch(e=>toast('加载缓存列表失败: '+e.message,false));
