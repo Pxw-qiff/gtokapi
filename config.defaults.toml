@@ -29,7 +29,9 @@ custom_instruction = ""
 # 图片返回格式：grok_url / local_url / base64
 image_format = "grok_url"
 # 视频返回格式：grok_url / local_url
-video_format = "grok_url"
+# local_url 会把视频下载到本地，返回 http://app_url/v1/files/video?id=xxx 形式
+# 需要配置上方 app.app_url 为服务器实际访问地址
+video_format = "local_url"
 
 # ==================== 本地缓存 ====================
 [cache.local]

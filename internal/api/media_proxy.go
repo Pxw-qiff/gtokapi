@@ -43,13 +43,14 @@ func imageFormat() string {
 	}
 }
 
-// videoFormat 返回当前配置的视频返回格式，默认 grok_url。
+// videoFormat 返回当前配置的视频返回格式，默认 local_url。
+// local_url 会把视频下载到本地，通过 /v1/files/video?id=xxx 提供下载。
 func videoFormat() string {
-	fmtStr := strings.ToLower(strings.TrimSpace(config.Global().GetStr("features.video_format", "grok_url")))
-	if fmtStr == "local_url" {
+	fmtStr := strings.ToLower(strings.TrimSpace(config.Global().GetStr("features.video_format", "local_url")))
+	if fmtStr == "grok_url" {
 		return fmtStr
 	}
-	return "grok_url"
+	return "local_url"
 }
 
 // localImageURL 根据 fileID 生成本地图片代理 URL。
