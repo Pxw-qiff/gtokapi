@@ -222,7 +222,7 @@ func (s *Server) runGrokChatOnce(w http.ResponseWriter, r *http.Request, lease *
 					chunk["choices"].([]any)[0].(map[string]any)["delta"] = map[string]any{"reasoning_content": ev.Content}
 					sw.writeJSONData(chunk)
 				case grok.EventImage:
-					resolved, _ := resolveImageURL(s, ev.Content)
+					resolved, _ := resolveImageURL(s, ev.Content, lease.Token)
 					md := "![image](" + resolved + ")"
 					chunk := makeStreamChunk(completionID, created, modelName, md, "", false)
 					sw.writeJSONData(chunk)
@@ -284,7 +284,7 @@ func (s *Server) runGrokChatOnce(w http.ResponseWriter, r *http.Request, lease *
 	if len(imageURLs) > 0 {
 		var mds []string
 		for _, u := range imageURLs {
-			resolved, _ := resolveImageURL(s, u[0])
+			resolved, _ := resolveImageURL(s, u[0], lease.Token)
 			mds = append(mds, "![image]("+resolved+")")
 		}
 		if text != "" {
@@ -555,7 +555,7 @@ func (s *Server) runWSImageChat(c *gin.Context, req *chatCompletionRequest, spec
 				if url != "" {
 					url = grok.ImageBaseURL + strings.TrimPrefix(url, "/")
 				}
-				resolved, _ := resolveImageURL(s, url)
+				resolved, _ := resolveImageURL(s, url, lease.Token)
 				md := "![image](" + resolved + ")"
 				chunk := makeStreamChunk(completionID, created, modelName, md, "", false)
 				sw.writeJSONData(chunk)
@@ -608,7 +608,7 @@ func (s *Server) runWSImageChat(c *gin.Context, req *chatCompletionRequest, spec
 	if len(imageURLs) > 0 {
 		var mds []string
 		for _, u := range imageURLs {
-			resolved, _ := resolveImageURL(s, u)
+			resolved, _ := resolveImageURL(s, u, lease.Token)
 			mds = append(mds, "![image]("+resolved+")")
 		}
 		text = strings.Join(mds, "\n\n")
@@ -894,7 +894,7 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 
 	if stream {
 		// 发送最终视频 URL（根据 video_format 可能转换为本地代理 URL）
-		videoURL, _, _ := resolveVideoURL(s, lastArtifact.VideoURL)
+		videoURL, _, _ := resolveVideoURL(s, lastArtifact.VideoURL, token)
 		chunk := makeStreamChunk(completionID, created, req.Model, videoURL, "", false)
 		sw.writeJSONData(chunk)
 		// 发送结束标记
@@ -909,7 +909,7 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 	if len(progressUpdates) > 0 {
 		thinking = strings.Join(progressUpdates, "\n")
 	}
-	videoURL, _, _ := resolveVideoURL(s, lastArtifact.VideoURL)
+	videoURL, _, _ := resolveVideoURL(s, lastArtifact.VideoURL, token)
 	resp := makeChatResponse(completionID, created, req.Model, videoURL, thinking, true)
 	c.JSON(http.StatusOK, resp)
 }

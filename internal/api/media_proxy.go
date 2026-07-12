@@ -16,6 +16,7 @@ import (
 
 	"github.com/aurora-develop/grok2api/internal/config"
 	"github.com/aurora-develop/grok2api/internal/logger"
+	"github.com/aurora-develop/grok2api/internal/platform"
 )
 
 // mediaProxy 提供将 Grok 远程资源下载到本地并返回本地代理 URL 的能力。
@@ -97,14 +98,14 @@ func extractFileIDFromURL(rawURL string) string {
 	return stem
 }
 
-// downloadMediaViaTransport 下载远程媒体资源到本地。
+// downloadMedia 下载远程媒体资源到本地。
 //
 // 【修改说明】
-// 修改背景：原实现复用 Grok Transport（带 SSO cookie + Origin 头），CDN 下载会 403
-// 解决问题：改用标准 http.Client，仅设置 User-Agent，避免 Grok 专属头干扰 CDN 访问
-// 设计考虑：若配置了出口代理则同样走代理，确保容器网络可达 Grok CDN
-// 注意事项：下载失败时记录 warning 日志，便于排查缓存为空的原因
-func downloadMediaViaTransport(s *Server, rawURL string) ([]byte, string, error) {
+// 修改背景：assets.grok.com CDN 需要 SSO cookie 认证，标准 HTTP 客户端不带 cookie 会 403
+// 解决问题：用标准 http.Client + 手动设置 sso cookie，不套 Grok Transport 的 x-statsig-id 等头
+// 设计考虑：若配置了出口代理则同样走代理；下载失败时记录 warning 日志
+// 注意事项：token 为生成该媒体资源的账号 SSO token，用于 CDN 鉴权
+func downloadMedia(s *Server, rawURL, token string) ([]byte, string, error) {
 	if rawURL == "" {
 		return nil, "", fmt.Errorf("empty url")
 	}
@@ -124,6 +125,9 @@ func downloadMediaViaTransport(s *Server, rawURL string) ([]byte, string, error)
 		return nil, "", err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36")
+	if token != "" {
+		req.Header.Set("Cookie", "sso="+platform.SanitizeToken(token)+"; sso-rw="+platform.SanitizeToken(token))
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -150,7 +154,8 @@ func downloadMediaViaTransport(s *Server, rawURL string) ([]byte, string, error)
 
 // resolveImageURL 根据 image_format 把 Grok 图片 URL 转换成目标形式。
 // 返回转换后的 URL（或 base64 字符串）以及可能的错误；出错时回退到原始 URL。
-func resolveImageURL(s *Server, rawURL string) (string, error) {
+// token 为生成该图片的账号 SSO token，用于 CDN 鉴权下载。
+func resolveImageURL(s *Server, rawURL, token string) (string, error) {
 	if rawURL == "" {
 		return "", nil
 	}
@@ -159,7 +164,7 @@ func resolveImageURL(s *Server, rawURL string) (string, error) {
 		return rawURL, nil
 	}
 
-	body, contentType, err := downloadMediaViaTransport(s, rawURL)
+	body, contentType, err := downloadMedia(s, rawURL, token)
 	if err != nil {
 		return rawURL, err
 	}
@@ -186,8 +191,8 @@ func resolveImageURL(s *Server, rawURL string) (string, error) {
 
 // resolveVideoURL 根据 video_format 把 Grok 视频 URL 转换成目标形式。
 // 返回要对外暴露的 URL 以及本地文件路径（local_url 模式时用于 /v1/videos/:id/content）。
-// 出错时回退到原始 URL。
-func resolveVideoURL(s *Server, rawURL string) (string, string, error) {
+// 出错时回退到原始 URL。token 为生成该视频的账号 SSO token，用于 CDN 鉴权下载。
+func resolveVideoURL(s *Server, rawURL, token string) (string, string, error) {
 	if rawURL == "" {
 		return "", "", nil
 	}
@@ -195,7 +200,7 @@ func resolveVideoURL(s *Server, rawURL string) (string, string, error) {
 		return rawURL, "", nil
 	}
 
-	body, _, err := downloadMediaViaTransport(s, rawURL)
+	body, _, err := downloadMedia(s, rawURL, token)
 	if err != nil {
 		return rawURL, "", err
 	}

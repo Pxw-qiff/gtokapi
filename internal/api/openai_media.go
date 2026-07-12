@@ -135,7 +135,7 @@ func (s *Server) handleImageGenerations(c *gin.Context) {
 
 	out := []map[string]any{}
 	for _, url := range imageURLs {
-		resolved, _ := resolveImageURL(s, url)
+		resolved, _ := resolveImageURL(s, url, ssoToken)
 		if strings.HasPrefix(resolved, "data:") {
 			b64 := resolved
 			if idx := strings.Index(resolved, ","); idx >= 0 {
@@ -209,7 +209,7 @@ func (s *Server) handleWSImageGenerations(c *gin.Context, spec *model.Spec, prom
 			out = append(out, map[string]any{"b64_json": img.blob})
 			continue
 		}
-		resolved, _ := resolveImageURL(s, rawURL)
+		resolved, _ := resolveImageURL(s, rawURL, lease.Token)
 		if strings.HasPrefix(resolved, "data:") {
 			b64 := resolved
 			if idx := strings.Index(resolved, ","); idx >= 0 {
@@ -285,7 +285,7 @@ func (s *Server) handleImageEdits(c *gin.Context) {
 	imageURLs, _ := s.captureImageURLs(c.Request, chatReq, spec, ssoToken)
 	out := []map[string]any{}
 	for _, url := range imageURLs {
-		resolved, _ := resolveImageURL(s, url)
+		resolved, _ := resolveImageURL(s, url, ssoToken)
 		if strings.HasPrefix(resolved, "data:") {
 			b64 := resolved
 			if idx := strings.Index(resolved, ","); idx >= 0 {
@@ -715,7 +715,7 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, spec *model.Spec) {
 		job.Status = "completed"
 		job.Progress = 100
 		job.CompletedAt = &now
-		videoURL, localPath, _ := resolveVideoURL(s, lastArtifact.VideoURL)
+		videoURL, localPath, _ := resolveVideoURL(s, lastArtifact.VideoURL, token)
 		job.VideoURL = videoURL
 		job.contentPath = localPath
 		return
