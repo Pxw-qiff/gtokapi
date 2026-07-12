@@ -156,6 +156,7 @@ textarea{resize:vertical;min-height:100px}
 <button class="btn btn-primary" onclick="showAddTokenModal()">+ 添加账号</button>
 <button class="btn" onclick="refreshAllAccounts()">批量刷新</button>
 <button class="btn" onclick="batchNSFW(true)">批量开启NSFW</button>
+<button class="btn" onclick="batchNSFW(false)">批量关闭NSFW</button>
 <button class="btn btn-danger" onclick="deleteInvalidTokens()">删除失效账号</button>
 <select id="acc-filter-pool" onchange="renderAccounts()" style="width:auto">
 <option value="">全部池</option>
@@ -534,7 +535,7 @@ function renderAccounts(){
     }
     html+=`<tr>
       <td><input type="checkbox" class="acc-check" value="${escapeHtml(a.token)}"></td>
-      <td title="${escapeHtml(a.token)}">${maskToken(a.token)}</td>
+      <td title="${escapeHtml(a.token)}">${maskToken(a.token)} <button class="btn btn-sm" onclick="copyToken('${escapeHtml(a.token)}')" title="复制完整Token">复制</button></td>
       <td>${poolTag(a.pool)}</td>
       <td>${statusTag(a.status)}</td>
       <td style="font-size:11px">${quotaHtml}</td>
@@ -627,6 +628,14 @@ function batchNSFW(enable){
   api('/admin/api/batch/nsfw?enabled='+enable,{method:'POST',body:JSON.stringify({tokens})}).then(()=>{
     toast('NSFW操作完成');loadAccounts();
   }).catch(e=>toast('操作失败: '+e.message,false));
+}
+function copyToken(token){
+  navigator.clipboard.writeText(token).then(()=>toast('Token 已复制')).catch(()=>{
+    // 回退方案：创建临时 input
+    const el=document.createElement('input');el.value=token;document.body.appendChild(el);el.select();
+    try{document.execCommand('copy');toast('Token 已复制')}catch(e){toast('复制失败',false)}
+    document.body.removeChild(el);
+  });
 }
 function batchToggle(enable){
   const tokens=getSelectedTokens();
