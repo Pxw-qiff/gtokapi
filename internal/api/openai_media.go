@@ -21,6 +21,7 @@ import (
 	"github.com/aurora-develop/grok2api/internal/account"
 	"github.com/aurora-develop/grok2api/internal/config"
 	"github.com/aurora-develop/grok2api/internal/grok"
+	"github.com/aurora-develop/grok2api/internal/logger"
 	"github.com/aurora-develop/grok2api/internal/model"
 	"github.com/aurora-develop/grok2api/internal/platform"
 	"github.com/aurora-develop/grok2api/internal/storage"
@@ -639,6 +640,8 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 	}
 	registerVideoJob(job)
 
+	logger.Infof("视频任务已创建: job=%s model=%s seconds=%d size=%s refs=%d", job.ID, modelName, seconds, size, len(allImages))
+
 	go s.runVideoJob(job, prompt, allImages, spec)
 	c.JSON(http.StatusOK, job.toDict())
 }
@@ -677,15 +680,18 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 	defer cancel()
 	job.Status = "in_progress"
 	job.Progress = 1
+	logger.Infof("视频任务开始: job=%s prompt=%q refs=%d", job.ID, truncate(prompt, 80), len(imageURLs))
 
 	// 1. 获取账号
 	lease, _ := reserveAccount(ctx, s.Directory, spec, nil)
 	if lease == nil {
+		logger.Warnf("视频任务无可用账号: job=%s", job.ID)
 		s.failVideoJob(job, "no available accounts")
 		return
 	}
 	defer s.Directory.Release(lease)
 	token := lease.Token
+	logger.Infof("视频任务已分配账号: job=%s token=%s", job.ID, platform.SanitizeToken(token))
 
 	// 2. 创建 media post，获取 parentPostId
 	//    有参考图：逐张上传 -> 创建 image media post -> 第一张 post id 作为 parentPostId
@@ -693,14 +699,17 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 	var parentPostID string
 	var imageReferences []string
 	if len(imageURLs) > 0 {
+		logger.Infof("视频任务上传参考图: job=%s count=%d", job.ID, len(imageURLs))
 		for i, imgURL := range imageURLs {
 			uploadResult, err := grok.UploadFromInput(ctx, s.Transport, token, imgURL)
 			if err != nil {
+				logger.Warnf("视频任务参考图上传失败: job=%s index=%d error=%v", job.ID, i+1, err)
 				s.failVideoJob(job, fmt.Sprintf("reference image %d upload: %s", i+1, err.Error()))
 				return
 			}
 			contentURL := uploadResult.FileURI
 			if contentURL == "" {
+				logger.Warnf("视频任务参考图上传无文件URI: job=%s index=%d", job.ID, i+1)
 				s.failVideoJob(job, fmt.Sprintf("reference image %d upload returned no file URI", i+1))
 				return
 			}
@@ -709,6 +718,7 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 			imgPostResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, imgPostBody,
 				grok.WithReferer("https://grok.com/imagine"))
 			if err != nil {
+				logger.Warnf("视频任务参考图media post失败: job=%s index=%d error=%v", job.ID, i+1, err)
 				s.failVideoJob(job, fmt.Sprintf("image media post %d create: %s", i+1, err.Error()))
 				return
 			}
@@ -717,6 +727,7 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 				postID, _ = post["id"].(string)
 			}
 			if postID == "" {
+				logger.Warnf("视频任务参考图media post无post id: job=%s index=%d", job.ID, i+1)
 				s.failVideoJob(job, fmt.Sprintf("image media post %d returned no post id", i+1))
 				return
 			}
@@ -726,15 +737,18 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 			imageReferences = append(imageReferences, contentURL)
 		}
 		if parentPostID == "" {
+			logger.Warnf("视频任务参考图无parent post id: job=%s", job.ID)
 			s.failVideoJob(job, "no parent post id from reference images")
 			return
 		}
+		logger.Infof("视频任务参考图上传完成: job=%s parentPostId=%s refs=%d", job.ID, parentPostID, len(imageReferences))
 	} else {
 		postPayload := grok.BuildVideoPostPayload(prompt)
 		postBody, _ := json.Marshal(postPayload)
 		postResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, postBody,
 			grok.WithReferer("https://grok.com/imagine"))
 		if err != nil {
+			logger.Warnf("视频任务media post创建失败: job=%s error=%v", job.ID, err)
 			s.failVideoJob(job, "media post create: "+err.Error())
 			return
 		}
@@ -742,20 +756,24 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 			parentPostID, _ = post["id"].(string)
 		}
 		if parentPostID == "" {
+			logger.Warnf("视频任务media post无post id: job=%s", job.ID)
 			s.failVideoJob(job, "media post returned no post id")
 			return
 		}
+		logger.Infof("视频任务media post已创建: job=%s parentPostId=%s", job.ID, parentPostID)
 	}
 
 	// 3. 分段生成视频
 	aspectRatio, resolutionName := grok.ResolveVideoSize(job.Size)
 	segments := grok.BuildSegmentLengths(job.Seconds)
 	totalSegments := len(segments)
+	logger.Infof("视频任务开始分段生成: job=%s segments=%v aspect=%s resolution=%s", job.ID, segments, aspectRatio, resolutionName)
 	extendPostID := parentPostID
 	elapsedSeconds := 0
 	var lastArtifact *grok.VideoArtifact
 
 	for index, segmentLength := range segments {
+		logger.Infof("视频任务分段 %d/%d 开始: job=%s length=%ds", index+1, totalSegments, job.ID, segmentLength)
 		var payload map[string]any
 		referer := "https://grok.com/imagine"
 		if index == 0 {
@@ -774,6 +792,7 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 		bodyReader, err := s.Transport.PostStream(ctx, grok.Chat, token, body,
 			grok.WithReferer(referer))
 		if err != nil {
+			logger.Warnf("视频任务分段 %d 上游请求失败: job=%s error=%v", index+1, job.ID, err)
 			s.failVideoJob(job, fmt.Sprintf("video segment %d upstream: %s", index, err.Error()))
 			return
 		}
@@ -781,15 +800,18 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 		artifact, err := s.collectVideoSegment(bodyReader, index, totalSegments, job)
 		bodyReader.Close()
 		if err != nil {
+			logger.Warnf("视频任务分段 %d 解析失败: job=%s error=%v", index+1, job.ID, err)
 			s.failVideoJob(job, fmt.Sprintf("video segment %d: %s", index, err.Error()))
 			return
 		}
 		if artifact == nil {
+			logger.Warnf("视频任务分段 %d 无视频URL: job=%s", index+1, job.ID)
 			s.failVideoJob(job, fmt.Sprintf("video segment %d: no video URL", index))
 			return
 		}
 
 		lastArtifact = artifact
+		logger.Infof("视频任务分段 %d/%d 完成: job=%s videoUrl=%s postId=%s", index+1, totalSegments, job.ID, truncate(artifact.VideoURL, 80), artifact.VideoPostID)
 		extendPostID = artifact.VideoPostID
 		if extendPostID == "" {
 			extendPostID = artifact.AssetID
@@ -809,8 +831,10 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 		videoURL, localPath, _ := resolveVideoURL(s, lastArtifact.VideoURL, token)
 		job.VideoURL = videoURL
 		job.contentPath = localPath
+		logger.Infof("视频任务完成: job=%s videoUrl=%s", job.ID, truncate(videoURL, 100))
 		return
 	}
+	logger.Warnf("视频任务无最终URL: job=%s", job.ID)
 	s.failVideoJob(job, "no video URL in upstream response")
 }
 
@@ -872,6 +896,7 @@ func (s *Server) failVideoJob(job *videoJob, message string) {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}{Code: "video_generation_failed", Message: message}
+	logger.Warnf("视频任务失败: job=%s reason=%s", job.ID, message)
 }
 
 func (j *videoJob) toDict() map[string]any {
@@ -911,6 +936,14 @@ func isValidVideoLength(n int) bool {
 		return true
 	}
 	return false
+}
+
+// truncate 截断字符串到指定长度，超长则加省略号。
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 func parseIntStr(s string) (int, error) {

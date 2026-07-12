@@ -12,6 +12,7 @@ import (
 	"github.com/aurora-develop/grok2api/internal/account"
 	"github.com/aurora-develop/grok2api/internal/config"
 	"github.com/aurora-develop/grok2api/internal/grok"
+	"github.com/aurora-develop/grok2api/internal/logger"
 	"github.com/aurora-develop/grok2api/internal/platform"
 	"github.com/aurora-develop/grok2api/internal/storage"
 )
@@ -94,6 +95,13 @@ func (s *Server) AdminRouter() *gin.Engine {
 	// Public local media serving (no auth - file IDs are unguessable).
 	engine.GET("/v1/files/image", s.handleFileImage)
 	engine.GET("/v1/files/video", s.handleFileVideo)
+
+	// 视频生成路由（admin key 认证）
+	// 【修改说明】前端管理面板通过 1379 端口访问，/v1/videos 原本只在 APIRouter(8000) 上注册，
+	// 导致从 admin 面板提交视频任务时请求打不到正确路由。此处补注册，用 admin key 认证。
+	engine.POST("/v1/videos", verifyAdminKey(), s.handleVideoCreate)
+	engine.GET("/v1/videos/:id", verifyAdminKey(), s.handleVideoGet)
+	engine.GET("/v1/videos/:id/content", verifyAdminKey(), s.handleVideoGet)
 
 	// Admin panel (no auth - page handles auth via admin key).
 	engine.GET("/admin", s.handleAdminPanel)
@@ -184,10 +192,21 @@ func corsMiddleware() gin.HandlerFunc {
 	}
 }
 
-// logMiddleware logs each request line at debug level.
+// logMiddleware 记录每个请求的方法、路径、状态码和耗时。
+// 【修改说明】原实现为空，导致请求失败时日志无任何记录，无法排查问题。
 func logMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		start := time.Now()
 		c.Next()
+		latency := time.Since(start)
+		status := c.Writer.Status()
+		method := c.Request.Method
+		path := c.Request.URL.Path
+		if status >= 400 {
+			logger.Warnf("HTTP %d %s %s %s", status, method, path, latency)
+		} else {
+			logger.Infof("HTTP %d %s %s %s", status, method, path, latency)
+		}
 	}
 }
 
