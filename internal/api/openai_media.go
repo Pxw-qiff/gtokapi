@@ -692,6 +692,12 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 	}
 	defer s.Directory.Release(lease)
 	token := lease.Token
+	// 【修改说明】任务失败时统一调用 feedbackError 更新账号使用统计
+	defer func() {
+		if job.Status == "failed" {
+			s.feedbackError(token, platform.UpstreamError(job.Error.Message, 502, ""), lease.ModeID)
+		}
+	}()
 	logger.Infof("视频任务已分配账号: job=%s token=%s", job.ID, platform.SanitizeToken(token))
 
 	// 2. 创建 media post，获取 parentPostId
@@ -835,10 +841,13 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 		videoURL, localPath, _ := resolveVideoURL(s, lastArtifact.VideoURL, token)
 		job.VideoURL = videoURL
 		job.contentPath = localPath
+		// 【修改说明】视频任务成功后更新账号使用次数
+		s.feedback(token, account.FbSuccess, lease.ModeID, nil, nil)
 		logger.Infof("视频任务完成: job=%s videoUrl=%s", job.ID, truncate(videoURL, 100))
 		return
 	}
 	logger.Warnf("视频任务无最终URL: job=%s", job.ID)
+	s.feedbackError(token, platform.UpstreamError("no video URL in upstream response", 502, ""), lease.ModeID)
 	s.failVideoJob(job, "no video URL in upstream response")
 }
 
