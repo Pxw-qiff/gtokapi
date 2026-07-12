@@ -134,16 +134,17 @@ func (s *Server) handleImageGenerations(c *gin.Context) {
 	}
 
 	out := []map[string]any{}
-	for i := 0; i < n && i < len(imageURLs); i++ {
-		url := imageURLs[i]
-		if responseFormat == "b64_json" {
-			b64, err := s.fetchImageBase64ViaTransport(url)
-			if err == nil {
-				out = append(out, map[string]any{"b64_json": b64})
-				continue
+	for _, url := range imageURLs {
+		resolved, _ := resolveImageURL(s, url)
+		if strings.HasPrefix(resolved, "data:") {
+			b64 := resolved
+			if idx := strings.Index(resolved, ","); idx >= 0 {
+				b64 = resolved[idx+1:]
 			}
+			out = append(out, map[string]any{"b64_json": b64})
+		} else {
+			out = append(out, map[string]any{"url": resolved})
 		}
-		out = append(out, map[string]any{"url": url})
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"created": time.Now().Unix(),
@@ -202,21 +203,21 @@ func (s *Server) handleWSImageGenerations(c *gin.Context, spec *model.Spec, prom
 	}
 
 	out := []map[string]any{}
-	for i := 0; i < n && i < len(images); i++ {
-		img := images[i]
-		if responseFormat == "b64_json" {
-			if img.blob != "" {
-				out = append(out, map[string]any{"b64_json": img.blob})
-			} else if img.url != "" {
-				b64, err := s.fetchImageBase64ViaTransport(img.url)
-				if err == nil {
-					out = append(out, map[string]any{"b64_json": b64})
-					continue
-				}
-				out = append(out, map[string]any{"url": img.url})
+	for _, img := range images {
+		rawURL := img.url
+		if responseFormat == "b64_json" && img.blob != "" {
+			out = append(out, map[string]any{"b64_json": img.blob})
+			continue
+		}
+		resolved, _ := resolveImageURL(s, rawURL)
+		if strings.HasPrefix(resolved, "data:") {
+			b64 := resolved
+			if idx := strings.Index(resolved, ","); idx >= 0 {
+				b64 = resolved[idx+1:]
 			}
+			out = append(out, map[string]any{"b64_json": b64})
 		} else {
-			out = append(out, map[string]any{"url": img.url})
+			out = append(out, map[string]any{"url": resolved})
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"created": time.Now().Unix(), "data": out})
@@ -284,14 +285,16 @@ func (s *Server) handleImageEdits(c *gin.Context) {
 	imageURLs, _ := s.captureImageURLs(c.Request, chatReq, spec, ssoToken)
 	out := []map[string]any{}
 	for _, url := range imageURLs {
-		if responseFormat == "b64_json" {
-			b64, err := s.fetchImageBase64ViaTransport(url)
-			if err == nil {
-				out = append(out, map[string]any{"b64_json": b64})
-				continue
+		resolved, _ := resolveImageURL(s, url)
+		if strings.HasPrefix(resolved, "data:") {
+			b64 := resolved
+			if idx := strings.Index(resolved, ","); idx >= 0 {
+				b64 = resolved[idx+1:]
 			}
+			out = append(out, map[string]any{"b64_json": b64})
+		} else {
+			out = append(out, map[string]any{"url": resolved})
 		}
-		out = append(out, map[string]any{"url": url})
 	}
 	c.JSON(http.StatusOK, gin.H{"created": time.Now().Unix(), "data": out})
 }
@@ -712,7 +715,9 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, spec *model.Spec) {
 		job.Status = "completed"
 		job.Progress = 100
 		job.CompletedAt = &now
-		job.VideoURL = lastArtifact.VideoURL
+		videoURL, localPath, _ := resolveVideoURL(s, lastArtifact.VideoURL)
+		job.VideoURL = videoURL
+		job.contentPath = localPath
 		return
 	}
 	s.failVideoJob(job, "no video URL in upstream response")
