@@ -1066,7 +1066,13 @@ function testVideo(){
   if(ADMIN_KEY)headers['Authorization']='Bearer '+ADMIN_KEY;
   const body={model,prompt,seconds,size};
   if(VID_IMAGES.length>0)body.image_urls=VID_IMAGES.slice();
-  fetch('/v1/videos',{method:'POST',headers,body:JSON.stringify(body)}).then(r=>r.json()).then(data=>{
+  fetch('/v1/videos',{method:'POST',headers,body:JSON.stringify(body)}).then(async r=>{
+    const txt=await r.text();
+    if(!r.ok){
+      out.innerHTML=`<span class="tag tag-disabled">HTTP ${r.status}</span><br><pre style="margin-top:6px;white-space:pre-wrap;font-size:12px">${escapeHtml(txt)}</pre>`;
+      return;
+    }
+    let data;try{data=JSON.parse(txt)}catch{out.innerHTML='响应解析失败:<br><pre style="white-space:pre-wrap;font-size:12px">'+escapeHtml(txt)+'</pre>';return}
     if(data.id){
       out.innerHTML=`任务已提交: <strong>${data.id}</strong><br>状态: ${data.status}<br><button class="btn btn-sm" onclick="pollVideo('${data.id}')">轮询状态</button><div id="vid-poll-result" style="margin-top:8px"></div>`;
     }else out.innerHTML=JSON.stringify(data,null,2);
@@ -1075,8 +1081,14 @@ function testVideo(){
 function pollVideo(id){
   const headers={};
   if(ADMIN_KEY)headers['Authorization']='Bearer '+ADMIN_KEY;
-  fetch('/v1/videos/'+id,{headers}).then(r=>r.json()).then(data=>{
+  fetch('/v1/videos/'+id,{headers}).then(async r=>{
     const el=document.getElementById('vid-poll-result');
+    const txt=await r.text();
+    if(!r.ok){
+      el.innerHTML=`<span class="tag tag-disabled">HTTP ${r.status}</span><br><pre style="white-space:pre-wrap;font-size:12px">${escapeHtml(txt)}</pre>`;
+      return;
+    }
+    let data;try{data=JSON.parse(txt)}catch{el.innerHTML='响应解析失败:<br><pre style="white-space:pre-wrap;font-size:12px">'+escapeHtml(txt)+'</pre>';return}
     if(data.status==='completed'){
       el.innerHTML=`<span class="tag tag-active">完成</span><br><video controls src="${data.video_url}" style="max-width:100%;margin-top:8px;border-radius:14px"></video>`;
     }else if(data.status==='failed'){
