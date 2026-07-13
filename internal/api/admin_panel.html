@@ -411,6 +411,7 @@ textarea{resize:vertical;min-height:80px;border-radius:10px}
 <option value="16:9">16:9 (横屏)</option>
 <option value="1:1">1:1 (方形)</option>
 </select>
+<label class="checkbox"><input type="checkbox" id="test-vid-upscale"> 1080p Upscale</label>
 </div>
 <textarea id="test-vid-input" placeholder="输入视频提示词..." style="width:100%;min-height:60px;margin-bottom:10px"></textarea>
 <div id="test-vid-drop" style="border:2px dashed var(--border);border-radius:14px;padding:20px;text-align:center;color:var(--fg-muted);font-size:13px;margin-bottom:10px;cursor:pointer;transition:border-color .15s,background .15s">
@@ -1119,7 +1120,8 @@ function testVideo(){
   out.innerHTML='提交中...';
   const headers={'Content-Type':'application/json'};
   if(ADMIN_KEY)headers['Authorization']='Bearer '+ADMIN_KEY;
-  const body={model,prompt,duration,aspect_ratio};
+  const upscale=document.getElementById('test-vid-upscale').checked;
+  const body={model,prompt,duration,aspect_ratio,upscale};
   if(VID_IMAGES.length>0)body.images=VID_IMAGES.slice();
   fetch('/v1/videos',{method:'POST',headers,body:JSON.stringify(body)}).then(async r=>{
     const txt=await r.text();

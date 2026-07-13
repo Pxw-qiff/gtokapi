@@ -137,6 +137,14 @@ func BuildImagePostPayload(mediaURL string) map[string]any {
 	}
 }
 
+// BuildVideoUpscalePayload 构建 1080p 画质提升请求的 payload。
+// POST /rest/media/video/upscale，videoId 为视频生成的 post ID。
+func BuildVideoUpscalePayload(videoID string) map[string]any {
+	return map[string]any{
+		"videoId": videoID,
+	}
+}
+
 // BuildVideoGenPayload 构建第一段视频生成请求的 payload。
 // 发送到 POST /rest/app-chat/conversations/new，modelName 为 imagine-video-gen。
 // imageReferences 为多张参考图的 content URL 列表，非空时启用参考图模式。

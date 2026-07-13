@@ -533,6 +533,7 @@ type videoJob struct {
 	Quality     string `json:"quality"`
 	ImageURL    string `json:"image_url,omitempty"`
 	ImageURLs   []string `json:"image_urls,omitempty"`
+	Upscale     bool   `json:"upscale,omitempty"`
 	VideoURL    string `json:"video_url,omitempty"`
 	CompletedAt *int64 `json:"completed_at,omitempty"`
 	Error       *struct {
@@ -560,6 +561,7 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 	var durationInt int
 
 	contentType := c.GetHeader("Content-Type")
+	var upscaleRequested bool
 	if strings.HasPrefix(contentType, "application/json") {
 		var body struct {
 			Model       string   `json:"model"`
@@ -567,6 +569,7 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 			Duration    int      `json:"duration"`
 			AspectRatio string   `json:"aspect_ratio"`
 			Images      []string `json:"images"`
+			Upscale     bool     `json:"upscale"`
 		}
 		if err := readJSON(c, &body); err != nil {
 			writeAppError(c, err)
@@ -577,6 +580,7 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 		durationInt = body.Duration
 		aspectRatio = strings.TrimSpace(body.AspectRatio)
 		images = body.Images
+		upscaleRequested = body.Upscale
 	} else {
 		if err := c.Request.ParseMultipartForm(50 << 20); err != nil {
 			writeAppError(c, platform.ValidationError("Invalid multipart form: "+err.Error(), "body"))
@@ -592,6 +596,7 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 		aspectRatio = strings.TrimSpace(c.Request.FormValue("aspect_ratio"))
 		// multipart 表单的 images 通过重复字段名传参
 		images = c.Request.PostForm["images"]
+		upscaleRequested = c.Request.FormValue("upscale") == "true" || c.Request.FormValue("upscale") == "1"
 	}
 
 	// 参考图最多 7 张
@@ -642,10 +647,11 @@ func (s *Server) handleVideoCreate(c *gin.Context) {
 		Size:        aspectRatio,
 		Quality:     "standard",
 		ImageURLs:   allImages,
+		Upscale:     upscaleRequested,
 	}
 	registerVideoJob(job)
 
-	logger.Infof("视频任务已创建: job=%s model=%s duration=%d aspect_ratio=%s refs=%d", job.ID, modelName, duration, aspectRatio, len(allImages))
+	logger.Infof("视频任务已创建: job=%s model=%s duration=%d aspect_ratio=%s refs=%d upscale=%t", job.ID, modelName, duration, aspectRatio, len(allImages), upscaleRequested)
 
 	go s.runVideoJob(job, prompt, allImages, spec)
 	c.JSON(http.StatusOK, job.toDict())
@@ -840,16 +846,37 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 
 	// 4. 完成
 	if lastArtifact != nil && lastArtifact.VideoURL != "" {
+		videoURL := lastArtifact.VideoURL
+
+		// 【修改说明】upscale 1080p：生成完成后调 /rest/media/video/upscale 提升画质
+		if job.Upscale && lastArtifact.VideoPostID != "" {
+			logger.Infof("视频任务开始 upscale: job=%s videoPostId=%s", job.ID, lastArtifact.VideoPostID)
+			upscalePayload := grok.BuildVideoUpscalePayload(lastArtifact.VideoPostID)
+			upscaleBody, _ := json.Marshal(upscalePayload)
+			upscaleResp, err := s.Transport.PostJSON(ctx, grok.VideoUpscale, token, upscaleBody,
+				grok.WithReferer("https://grok.com/imagine"))
+			if err != nil {
+				logger.Warnf("视频任务 upscale 失败: job=%s error=%v body=%s，使用原始视频", job.ID, err, errBody(err))
+			} else {
+				// 解析 upscale 响应，尝试从多种可能的字段中提取 1080p 视频 URL
+				if upscaledURL := extractUpscaledVideoURL(upscaleResp); upscaledURL != "" {
+					logger.Infof("视频任务 upscale 完成: job=%s upscaledUrl=%s", job.ID, truncate(upscaledURL, 100))
+					videoURL = upscaledURL
+				} else {
+					logger.Warnf("视频任务 upscale 响应无视频URL: job=%s resp=%v", job.ID, upscaleResp)
+				}
+			}
+		}
+
 		now := time.Now().Unix()
 		job.Status = "completed"
 		job.Progress = 100
 		job.CompletedAt = &now
-		videoURL, localPath, _ := resolveVideoURL(s, lastArtifact.VideoURL, token)
-		job.VideoURL = videoURL
-		job.contentPath = localPath
-		// 【修改说明】视频任务成功后更新账号使用次数
+		finalURL, finalPath, _ := resolveVideoURL(s, videoURL, token)
+		job.VideoURL = finalURL
+		job.contentPath = finalPath
 		s.feedback(token, account.FbSuccess, lease.ModeID, nil, nil)
-		logger.Infof("视频任务完成: job=%s videoUrl=%s", job.ID, truncate(videoURL, 100))
+		logger.Infof("视频任务完成: job=%s videoUrl=%s upscale=%t", job.ID, truncate(finalURL, 100), job.Upscale)
 		return
 	}
 	logger.Warnf("视频任务无最终URL: job=%s", job.ID)
@@ -957,6 +984,28 @@ func isValidVideoLength(n int) bool {
 		return true
 	}
 	return false
+}
+
+// extractUpscaledVideoURL 从 upscale 响应中提取 1080p 视频 URL。
+// 尝试多种可能的字段名，因为 Grok 的响应格式可能变化。
+func extractUpscaledVideoURL(resp map[string]any) string {
+	// 直接字段
+	for _, key := range []string{"videoUrl", "video_url", "url", "upscaledVideoUrl"} {
+		if v, ok := resp[key].(string); ok && v != "" {
+			return grok.AbsolutizeVideoURL(v)
+		}
+	}
+	// 嵌套在 post 或 video 对象里
+	for _, nestKey := range []string{"post", "video", "result"} {
+		if nested, ok := resp[nestKey].(map[string]any); ok {
+			for _, key := range []string{"videoUrl", "video_url", "url", "upscaledVideoUrl"} {
+				if v, ok := nested[key].(string); ok && v != "" {
+					return grok.AbsolutizeVideoURL(v)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // errBody 从 AppError 中提取 Body 字段，用于日志打印上游错误响应体。

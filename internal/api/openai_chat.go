@@ -43,11 +43,12 @@ type imageConfig struct {
 	ResponseFormat string `json:"response_format,omitempty"`
 }
 
-// 【修改说明】videoConfig 字段对齐：seconds->duration, size->aspect_ratio, 移除 resolution_name
+// 【修改说明】videoConfig 字段对齐：seconds->duration, size->aspect_ratio, 移除 resolution_name, 加 upscale
 type videoConfig struct {
 	Duration    int    `json:"duration,omitempty"`
 	AspectRatio string `json:"aspect_ratio,omitempty"`
 	Preset      string `json:"preset,omitempty"`
+	Upscale     bool   `json:"upscale,omitempty"`
 }
 
 // handleChatCompletions dispatches by capability.
@@ -981,11 +982,33 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 	}
 
 	s.feedback(token, account.FbSuccess, lease.ModeID, nil, nil)
-	logger.Infof("聊天视频完成: model=%s", req.Model)
+
+	// 【修改说明】upscale 1080p：生成完成后调 /rest/media/video/upscale 提升画质
+	finalVideoURL := lastArtifact.VideoURL
+	upscaleRequested := req.VideoConfig != nil && req.VideoConfig.Upscale
+	if upscaleRequested && lastArtifact.VideoPostID != "" {
+		logger.Infof("聊天视频开始 upscale: videoPostId=%s", lastArtifact.VideoPostID)
+		upscalePayload := grok.BuildVideoUpscalePayload(lastArtifact.VideoPostID)
+		upscaleBody, _ := json.Marshal(upscalePayload)
+		upscaleResp, err := s.Transport.PostJSON(ctx, grok.VideoUpscale, token, upscaleBody,
+			grok.WithReferer("https://grok.com/imagine"))
+		if err != nil {
+			logger.Warnf("聊天视频 upscale 失败: error=%v body=%s，使用原始视频", err, errBody(err))
+		} else {
+			if upscaledURL := extractUpscaledVideoURL(upscaleResp); upscaledURL != "" {
+				logger.Infof("聊天视频 upscale 完成: upscaledUrl=%s", truncate(upscaledURL, 100))
+				finalVideoURL = upscaledURL
+			} else {
+				logger.Warnf("聊天视频 upscale 响应无视频URL: resp=%v", upscaleResp)
+			}
+		}
+	}
+
+	logger.Infof("聊天视频完成: model=%s upscale=%t", req.Model, upscaleRequested)
 
 	if stream {
 		// 发送最终视频 URL（根据 video_format 可能转换为本地代理 URL）
-		videoURL, _, _ := resolveVideoURL(s, lastArtifact.VideoURL, token)
+		videoURL, _, _ := resolveVideoURL(s, finalVideoURL, token)
 		chunk := makeStreamChunk(completionID, created, req.Model, videoURL, "", false)
 		sw.writeJSONData(chunk)
 		// 发送结束标记
@@ -1000,7 +1023,7 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 	if len(progressUpdates) > 0 {
 		thinking = strings.Join(progressUpdates, "\n")
 	}
-	videoURL, _, _ := resolveVideoURL(s, lastArtifact.VideoURL, token)
+	videoURL, _, _ := resolveVideoURL(s, finalVideoURL, token)
 	resp := makeChatResponse(completionID, created, req.Model, videoURL, thinking, true)
 	c.JSON(http.StatusOK, resp)
 }
