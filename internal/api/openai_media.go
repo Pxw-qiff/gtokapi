@@ -849,9 +849,14 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 		videoURL := lastArtifact.VideoURL
 
 		// 【修改说明】upscale 1080p：生成完成后调 /rest/media/video/upscale 提升画质
-		if job.Upscale && lastArtifact.VideoPostID != "" {
-			logger.Infof("视频任务开始 upscale: job=%s videoPostId=%s", job.ID, lastArtifact.VideoPostID)
-			upscalePayload := grok.BuildVideoUpscalePayload(lastArtifact.VideoPostID)
+		// Grok 的 videoId 需要传 assetId（视频资产 ID），不是 videoPostId（对话 post ID）
+		upscaleVideoID := lastArtifact.AssetID
+		if upscaleVideoID == "" {
+			upscaleVideoID = lastArtifact.VideoPostID
+		}
+		if job.Upscale && upscaleVideoID != "" {
+			logger.Infof("视频任务开始 upscale: job=%s videoId=%s", job.ID, upscaleVideoID)
+			upscalePayload := grok.BuildVideoUpscalePayload(upscaleVideoID)
 			upscaleBody, _ := json.Marshal(upscalePayload)
 			upscaleResp, err := s.Transport.PostJSON(ctx, grok.VideoUpscale, token, upscaleBody,
 				grok.WithReferer("https://grok.com/imagine"))

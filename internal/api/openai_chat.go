@@ -984,11 +984,16 @@ func (s *Server) runVideoChat(c *gin.Context, req *chatCompletionRequest, spec *
 	s.feedback(token, account.FbSuccess, lease.ModeID, nil, nil)
 
 	// 【修改说明】upscale 1080p：生成完成后调 /rest/media/video/upscale 提升画质
+	// Grok 的 videoId 需要传 assetId（视频资产 ID），不是 videoPostId（对话 post ID）
 	finalVideoURL := lastArtifact.VideoURL
 	upscaleRequested := req.VideoConfig != nil && req.VideoConfig.Upscale
-	if upscaleRequested && lastArtifact.VideoPostID != "" {
-		logger.Infof("聊天视频开始 upscale: videoPostId=%s", lastArtifact.VideoPostID)
-		upscalePayload := grok.BuildVideoUpscalePayload(lastArtifact.VideoPostID)
+	upscaleVideoID := lastArtifact.AssetID
+	if upscaleVideoID == "" {
+		upscaleVideoID = lastArtifact.VideoPostID
+	}
+	if upscaleRequested && upscaleVideoID != "" {
+		logger.Infof("聊天视频开始 upscale: videoId=%s", upscaleVideoID)
+		upscalePayload := grok.BuildVideoUpscalePayload(upscaleVideoID)
 		upscaleBody, _ := json.Marshal(upscalePayload)
 		upscaleResp, err := s.Transport.PostJSON(ctx, grok.VideoUpscale, token, upscaleBody,
 			grok.WithReferer("https://grok.com/imagine"))
