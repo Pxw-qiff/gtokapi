@@ -907,10 +907,8 @@ func (s *Server) collectVideoSegment(bodyReader io.ReadCloser, segmentIndex, tot
 			continue
 		}
 		frameCount++
-		// 【修改说明】记录前3帧原始数据用于诊断上游返回了什么（如错误、空响应、非视频帧）
-		if frameCount <= 3 {
-			logger.Infof("视频段 %d SSE frame %d: %s", segmentIndex+1, frameCount, truncate(data, 500))
-		}
+		// 【修改说明】记录每帧的顶层 key 用于诊断上游返回了什么（如错误、空响应、非视频帧）
+		logger.Infof("视频段 %d SSE frame %d keys: %s", segmentIndex+1, frameCount, truncate(data, 300))
 		events, appErr := adapter.Feed([]byte(data))
 		if appErr != nil {
 			logger.Warnf("视频段 %d SSE frame %d 解析错误: %v", segmentIndex+1, frameCount, appErr)
