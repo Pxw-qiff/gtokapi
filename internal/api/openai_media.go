@@ -896,6 +896,7 @@ func (s *Server) collectVideoSegment(bodyReader io.ReadCloser, segmentIndex, tot
 	scanner := bufio.NewScanner(bodyReader)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 
+	frameCount := 0
 	for scanner.Scan() {
 		line := scanner.Text()
 		kind, data := grok.ClassifyLine(line)
@@ -905,8 +906,14 @@ func (s *Server) collectVideoSegment(bodyReader io.ReadCloser, segmentIndex, tot
 		if kind != "data" {
 			continue
 		}
+		frameCount++
+		// 【修改说明】记录前3帧原始数据用于诊断上游返回了什么（如错误、空响应、非视频帧）
+		if frameCount <= 3 {
+			logger.Infof("视频段 %d SSE frame %d: %s", segmentIndex+1, frameCount, truncate(data, 500))
+		}
 		events, appErr := adapter.Feed([]byte(data))
 		if appErr != nil {
+			logger.Warnf("视频段 %d SSE frame %d 解析错误: %v", segmentIndex+1, frameCount, appErr)
 			return nil, appErr
 		}
 		for _, ev := range events {
@@ -929,6 +936,12 @@ func (s *Server) collectVideoSegment(bodyReader io.ReadCloser, segmentIndex, tot
 		}
 	}
 
+	// 【修改说明】检查 scanner 是否因错误退出（如超时、连接中断）
+	if err := scanner.Err(); err != nil {
+		logger.Warnf("视频段 %d SSE 读取错误: job=%s error=%v", segmentIndex+1, job.ID, err)
+		return nil, fmt.Errorf("video segment %d: stream read error: %w", segmentIndex, err)
+	}
+
 	// Fallback：检查 adapter 累积的 VideoURLs
 	if len(adapter.VideoURLs) > 0 {
 		pair := adapter.VideoURLs[len(adapter.VideoURLs)-1]
@@ -937,6 +950,10 @@ func (s *Server) collectVideoSegment(bodyReader io.ReadCloser, segmentIndex, tot
 			VideoPostID: pair[1],
 		}, nil
 	}
+
+	// 【修改说明】流结束但无视频URL时记录帧数和会话信息，便于判断是空响应还是非视频帧
+	logger.Warnf("视频段 %d SSE 流结束无视频URL: job=%s frames=%d convId=%s respId=%s",
+		segmentIndex+1, job.ID, frameCount, adapter.ConversationID, adapter.LastResponseID)
 
 	return nil, nil
 }
