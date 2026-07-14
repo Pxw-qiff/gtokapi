@@ -366,6 +366,10 @@ func (d *Directory) Feedback(token string, kind FeedbackKind, modeID int, remain
 			}
 		}
 		s.Health = minF(1.0, s.Health+successStep)
+		// 【修改说明】FbSuccess 时递增使用次数和更新最后使用时间
+		// 原代码只更新了 quota 和 health，遗漏了 UseCount 和 LastUseAt，导致管理面板显示的使用次数始终为 0。
+		s.UseCount++
+		s.LastUseAt = nowMs
 	case FbRateLimited:
 		if modeID >= 0 {
 			w := s.Quota.Get(modeID)
