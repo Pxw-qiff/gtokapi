@@ -693,93 +693,131 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 	job.Progress = 1
 	logger.Infof("视频任务开始: job=%s prompt=%q refs=%d", job.ID, truncate(prompt, 80), len(imageURLs))
 
-	// 1. 获取账号
-	lease, _ := reserveAccount(ctx, s.Directory, spec, nil)
-	if lease == nil {
-		logger.Warnf("视频任务无可用账号: job=%s", job.ID)
-		s.failVideoJob(job, "no available accounts")
-		return
+	// 【修改说明】账号获取 + media post 创建合并为重试循环
+	// 401 时自动标记当前账号 expired 并换号重试，避免因单个 token 失效导致整个视频任务失败
+	var lease *account.Lease
+	var token string
+	var parentPostID string
+	var imageReferences []string
+	excludedTokens := []string{}
+
+	maxAccountRetries := 3
+	for attempt := 0; attempt < maxAccountRetries; attempt++ {
+		lease, _ = reserveAccount(ctx, s.Directory, spec, excludedTokens)
+		if lease == nil {
+			logger.Warnf("视频任务无可用账号: job=%s", job.ID)
+			s.failVideoJob(job, "no available accounts")
+			return
+		}
+		token = lease.Token
+		logger.Infof("视频任务已分配账号: job=%s token=%s attempt=%d", job.ID, platform.SanitizeToken(token), attempt+1)
+
+		// 创建 media post
+		if len(imageURLs) > 0 {
+			logger.Infof("视频任务上传参考图: job=%s count=%d", job.ID, len(imageURLs))
+			retry401 := false
+			for i, imgURL := range imageURLs {
+				uploadResult, err := grok.UploadFromInput(ctx, s.Transport, token, imgURL)
+				if err != nil {
+					if isUnauthorizedError(err) && attempt < maxAccountRetries-1 {
+						logger.Warnf("视频任务参考图上传 401，换号重试: job=%s index=%d", job.ID, i+1)
+						retry401 = true
+						break
+					}
+					logger.Warnf("视频任务参考图上传失败: job=%s index=%d error=%v body=%s", job.ID, i+1, err, errBody(err))
+					s.failVideoJob(job, fmt.Sprintf("reference image %d upload: %s", i+1, err.Error()))
+					s.Directory.Release(lease)
+					return
+				}
+				contentURL, err := grok.ResolveUploadedAssetReference(token, uploadResult.FileID, uploadResult.FileURI)
+				if err != nil {
+					logger.Warnf("视频任务参考图URL解析失败: job=%s index=%d error=%v", job.ID, i+1, err)
+					s.failVideoJob(job, fmt.Sprintf("reference image %d resolve: %s", i+1, err.Error()))
+					s.Directory.Release(lease)
+					return
+				}
+				imgPostPayload := grok.BuildImagePostPayload(contentURL)
+				imgPostBody, _ := json.Marshal(imgPostPayload)
+				imgPostResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, imgPostBody,
+					grok.WithReferer("https://grok.com/imagine"))
+				if err != nil {
+					if isUnauthorizedError(err) && attempt < maxAccountRetries-1 {
+						logger.Warnf("视频任务参考图media post 401，换号重试: job=%s index=%d", job.ID, i+1)
+						retry401 = true
+						break
+					}
+					logger.Warnf("视频任务参考图media post失败: job=%s index=%d error=%v body=%s", job.ID, i+1, err, errBody(err))
+					s.failVideoJob(job, fmt.Sprintf("image media post %d create: %s", i+1, err.Error()))
+					s.Directory.Release(lease)
+					return
+				}
+				postID := ""
+				if post, ok := imgPostResp["post"].(map[string]any); ok {
+					postID, _ = post["id"].(string)
+				}
+				if postID == "" {
+					logger.Warnf("视频任务参考图media post无post id: job=%s index=%d", job.ID, i+1)
+					s.failVideoJob(job, fmt.Sprintf("image media post %d returned no post id", i+1))
+					s.Directory.Release(lease)
+					return
+				}
+				if i == 0 {
+					parentPostID = postID
+				}
+				imageReferences = append(imageReferences, contentURL)
+			}
+			if retry401 {
+				s.feedbackError(token, platform.UpstreamError("invalid credentials", 401, ""), lease.ModeID)
+				s.Directory.Release(lease)
+				excludedTokens = append(excludedTokens, token)
+				parentPostID = ""
+				imageReferences = nil
+				continue
+			}
+			if parentPostID == "" {
+				logger.Warnf("视频任务参考图无parent post id: job=%s", job.ID)
+				s.failVideoJob(job, "no parent post id from reference images")
+				s.Directory.Release(lease)
+				return
+			}
+			logger.Infof("视频任务参考图上传完成: job=%s parentPostId=%s refs=%d", job.ID, parentPostID, len(imageReferences))
+		} else {
+			postPayload := grok.BuildVideoPostPayload(prompt)
+			postBody, _ := json.Marshal(postPayload)
+			postResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, postBody,
+				grok.WithReferer("https://grok.com/imagine"))
+			if err != nil {
+				if isUnauthorizedError(err) && attempt < maxAccountRetries-1 {
+					logger.Warnf("视频任务media post 401，换号重试: job=%s attempt=%d", job.ID, attempt+1)
+					s.feedbackError(token, platform.UpstreamError("invalid credentials", 401, ""), lease.ModeID)
+					s.Directory.Release(lease)
+					excludedTokens = append(excludedTokens, token)
+					continue
+				}
+				logger.Warnf("视频任务media post创建失败: job=%s error=%v body=%s", job.ID, err, errBody(err))
+				s.failVideoJob(job, "media post create: "+err.Error())
+				s.Directory.Release(lease)
+				return
+			}
+			if post, ok := postResp["post"].(map[string]any); ok {
+				parentPostID, _ = post["id"].(string)
+			}
+			if parentPostID == "" {
+				logger.Warnf("视频任务media post无post id: job=%s", job.ID)
+				s.failVideoJob(job, "media post returned no post id")
+				s.Directory.Release(lease)
+				return
+			}
+			logger.Infof("视频任务media post已创建: job=%s parentPostId=%s", job.ID, parentPostID)
+		}
+		break
 	}
 	defer s.Directory.Release(lease)
-	token := lease.Token
-	// 【修改说明】任务失败时统一调用 feedbackError 更新账号使用统计
 	defer func() {
 		if job.Status == "failed" {
 			s.feedbackError(token, platform.UpstreamError(job.Error.Message, 502, ""), lease.ModeID)
 		}
 	}()
-	logger.Infof("视频任务已分配账号: job=%s token=%s", job.ID, platform.SanitizeToken(token))
-
-	// 2. 创建 media post，获取 parentPostId
-	//    有参考图：逐张上传 -> 创建 image media post -> 第一张 post id 作为 parentPostId
-	//    无参考图：创建 video media post（原逻辑）
-	var parentPostID string
-	var imageReferences []string
-	if len(imageURLs) > 0 {
-		logger.Infof("视频任务上传参考图: job=%s count=%d", job.ID, len(imageURLs))
-		for i, imgURL := range imageURLs {
-			uploadResult, err := grok.UploadFromInput(ctx, s.Transport, token, imgURL)
-			if err != nil {
-				logger.Warnf("视频任务参考图上传失败: job=%s index=%d error=%v body=%s", job.ID, i+1, err, errBody(err))
-				s.failVideoJob(job, fmt.Sprintf("reference image %d upload: %s", i+1, err.Error()))
-				return
-			}
-			// 【修改说明】FileURI 可能是相对路径，需要用 ResolveUploadedAssetReference 转成绝对 URL
-			contentURL, err := grok.ResolveUploadedAssetReference(token, uploadResult.FileID, uploadResult.FileURI)
-			if err != nil {
-				logger.Warnf("视频任务参考图URL解析失败: job=%s index=%d error=%v", job.ID, i+1, err)
-				s.failVideoJob(job, fmt.Sprintf("reference image %d resolve: %s", i+1, err.Error()))
-				return
-			}
-			imgPostPayload := grok.BuildImagePostPayload(contentURL)
-			imgPostBody, _ := json.Marshal(imgPostPayload)
-			imgPostResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, imgPostBody,
-				grok.WithReferer("https://grok.com/imagine"))
-			if err != nil {
-				logger.Warnf("视频任务参考图media post失败: job=%s index=%d error=%v body=%s", job.ID, i+1, err, errBody(err))
-				s.failVideoJob(job, fmt.Sprintf("image media post %d create: %s", i+1, err.Error()))
-				return
-			}
-			postID := ""
-			if post, ok := imgPostResp["post"].(map[string]any); ok {
-				postID, _ = post["id"].(string)
-			}
-			if postID == "" {
-				logger.Warnf("视频任务参考图media post无post id: job=%s index=%d", job.ID, i+1)
-				s.failVideoJob(job, fmt.Sprintf("image media post %d returned no post id", i+1))
-				return
-			}
-			if i == 0 {
-				parentPostID = postID
-			}
-			imageReferences = append(imageReferences, contentURL)
-		}
-		if parentPostID == "" {
-			logger.Warnf("视频任务参考图无parent post id: job=%s", job.ID)
-			s.failVideoJob(job, "no parent post id from reference images")
-			return
-		}
-		logger.Infof("视频任务参考图上传完成: job=%s parentPostId=%s refs=%d", job.ID, parentPostID, len(imageReferences))
-	} else {
-		postPayload := grok.BuildVideoPostPayload(prompt)
-		postBody, _ := json.Marshal(postPayload)
-		postResp, err := s.Transport.PostJSON(ctx, grok.MediaPost, token, postBody,
-			grok.WithReferer("https://grok.com/imagine"))
-		if err != nil {
-			logger.Warnf("视频任务media post创建失败: job=%s error=%v body=%s", job.ID, err, errBody(err))
-			s.failVideoJob(job, "media post create: "+err.Error())
-			return
-		}
-		if post, ok := postResp["post"].(map[string]any); ok {
-			parentPostID, _ = post["id"].(string)
-		}
-		if parentPostID == "" {
-			logger.Warnf("视频任务media post无post id: job=%s", job.ID)
-			s.failVideoJob(job, "media post returned no post id")
-			return
-		}
-		logger.Infof("视频任务media post已创建: job=%s parentPostId=%s", job.ID, parentPostID)
-	}
 
 	// 3. 分段生成视频
 	// 【修改说明】aspectRatio 直接从 job.Size 获取（用户直传），resolutionName 固定 720p
@@ -1056,6 +1094,18 @@ func isAntiBotError(err error) bool {
 		return false
 	}
 	return strings.Contains(appErr.Body, "anti-bot") || strings.Contains(appErr.Body, "code\":7")
+}
+
+// isUnauthorizedError 检查错误是否为 401 凭据失效
+func isUnauthorizedError(err error) bool {
+	var appErr *platform.AppError
+	if !errors.As(err, &appErr) {
+		return false
+	}
+	if appErr.Status == 401 {
+		return true
+	}
+	return platform.IsInvalidCredentialsBody(appErr.Body)
 }
 
 // truncate 截断字符串到指定长度，超长则加省略号。
