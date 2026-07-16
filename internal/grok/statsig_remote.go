@@ -229,3 +229,11 @@ func (s *remoteStatsigSigner) store(key, value string, expiresAt time.Time) {
 	}
 	s.entries[key] = remoteStatsigCacheEntry{value: value, expiresAt: expiresAt}
 }
+
+// InvalidateRemoteStatsigCache 清除所有远程签名缓存，用于 403 anti-bot 时强制重新获取签名
+func InvalidateRemoteStatsigCache() {
+	remoteStatsigSignerInstance.mu.Lock()
+	defer remoteStatsigSignerInstance.mu.Unlock()
+	remoteStatsigSignerInstance.entries = make(map[string]remoteStatsigCacheEntry)
+	logger.Infof("远程签名缓存已清除")
+}

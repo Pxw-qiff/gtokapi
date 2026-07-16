@@ -812,9 +812,18 @@ func (s *Server) runVideoJob(job *videoJob, prompt string, imageURLs []string, s
 		bodyReader, err := s.Transport.PostStream(ctx, grok.Chat, token, body,
 			grok.WithReferer(referer))
 		if err != nil {
-			logger.Warnf("视频任务分段 %d 上游请求失败: job=%s error=%v body=%s", index+1, job.ID, err, errBody(err))
-			s.failVideoJob(job, fmt.Sprintf("video segment %d upstream: %s", index, err.Error()))
-			return
+			// 【修改说明】403 anti-bot 时清除远程签名缓存并重试一次，因为缓存的签名可能已过期
+			if isAntiBotError(err) {
+				logger.Warnf("视频任务分段 %d 触发 anti-bot 403，清除签名缓存并重试: job=%s", index+1, job.ID)
+				grok.InvalidateRemoteStatsigCache()
+				bodyReader, err = s.Transport.PostStream(ctx, grok.Chat, token, body,
+					grok.WithReferer(referer))
+			}
+			if err != nil {
+				logger.Warnf("视频任务分段 %d 上游请求失败: job=%s error=%v body=%s", index+1, job.ID, err, errBody(err))
+				s.failVideoJob(job, fmt.Sprintf("video segment %d upstream: %s", index, err.Error()))
+				return
+			}
 		}
 
 		artifact, err := s.collectVideoSegment(bodyReader, index, totalSegments, job)
@@ -1035,6 +1044,18 @@ func errBody(err error) string {
 		return appErr.Body
 	}
 	return ""
+}
+
+// isAntiBotError 检查错误是否为 403 anti-bot 拒绝
+func isAntiBotError(err error) bool {
+	var appErr *platform.AppError
+	if !errors.As(err, &appErr) {
+		return false
+	}
+	if appErr.Status != 403 {
+		return false
+	}
+	return strings.Contains(appErr.Body, "anti-bot") || strings.Contains(appErr.Body, "code\":7")
 }
 
 // truncate 截断字符串到指定长度，超长则加省略号。
