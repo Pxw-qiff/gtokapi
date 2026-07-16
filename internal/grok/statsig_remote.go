@@ -87,7 +87,6 @@ func statsigRemoteSign(pathname, method, signerURL string) (string, error) {
 
 	// 4. 写入缓存
 	remoteStatsigSignerInstance.store(cacheKey, signature, time.Now().Add(remoteStatsigCacheTTL))
-	logger.Infof("远程签名成功: method=%s, path=%s, url=%s", method, pathname, signerURL)
 	return signature, nil
 }
 
