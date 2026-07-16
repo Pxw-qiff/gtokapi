@@ -245,7 +245,7 @@ textarea{resize:vertical;min-height:80px;border-radius:10px}
 </div>
 <div class="table-wrap">
 <table>
-<thead><tr><th><input type="checkbox" id="acc-select-all" onchange="toggleSelectAll(this)"></th><th>Token</th><th>池</th><th>状态</th><th>NSFW</th><th>到期时间</th><th>额度</th><th>使用次数</th><th>最后使用</th><th>操作</th></tr></thead>
+<thead><tr><th><input type="checkbox" id="acc-select-all" onchange="toggleSelectAll(this)"></th><th>Token</th><th>池</th><th>状态</th><th>NSFW</th><th>到期时间</th><th>额度</th><th>使用次数</th><th>最后使用</th><th>失败原因</th><th>操作</th></tr></thead>
 <tbody id="acc-tbody"></tbody>
 </table>
 </div>
@@ -715,8 +715,10 @@ function renderAccounts(){
       <td style="font-size:11px">${quotaHtml}</td>
       <td>${a.use_count||0}</td>
       <td>${fmtTime(a.last_used_at)}</td>
+      <td style="font-size:11px;color:var(--fg-muted)">${a.last_fail_reason||'-'}</td>
       <td>
         <button class="btn btn-sm" onclick="toggleToken('${escapeHtml(a.token)}',${a.status==='disabled'})">${a.status==='disabled'?'启用':'禁用'}</button>
+        ${(a.status==='expired'||a.status==='cooling')?`<button class="btn btn-sm btn-success" onclick="restoreToken('${escapeHtml(a.token)}')">恢复</button>`:''}
         <button class="btn btn-sm ${isNSFW?'btn-danger':''}" onclick="toggleNSFWOne('${escapeHtml(a.token)}',${!isNSFW})">${isNSFW?'关闭NSFW':'开启NSFW'}</button>
         <button class="btn btn-sm" onclick="showEditTokenModal('${escapeHtml(a.token)}','${a.pool}','${a.membership_expires_at||''}')">编辑</button>
         <button class="btn btn-sm btn-danger" onclick="deleteToken('${escapeHtml(a.token)}')">删除</button>
@@ -786,6 +788,12 @@ function toggleToken(token,enable){
   api('/admin/api/tokens/disabled',{method:'POST',body:JSON.stringify({token,disabled:enable})}).then(()=>{
     toast(enable?'已启用':'已禁用');loadAccounts();
   }).catch(e=>toast('操作失败: '+e.message,false));
+}
+function restoreToken(token){
+  if(!confirm('确认恢复此账号为活跃状态?'))return;
+  api('/admin/api/tokens/restore',{method:'POST',body:JSON.stringify({token})}).then(()=>{
+    toast('已恢复');loadAccounts();loadDashboard();
+  }).catch(e=>toast('恢复失败: '+e.message,false));
 }
 function deleteInvalidTokens(){
   if(!confirm('确认删除所有失效账号?'))return;

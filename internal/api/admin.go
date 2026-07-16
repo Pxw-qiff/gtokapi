@@ -166,14 +166,25 @@ func (s *Server) handleTokensList(c *gin.Context) {
 		writeAppError(c, err)
 		return
 	}
+	// 【修改说明】获取内存中的 Slot 数据，合并 use_count 和 last_used_at
+	// 持久化 Record 的 UsageUseCount 不实时更新，内存 Slot 的 UseCount 是实时递增的
+	slots := map[string]*account.Slot{}
+	if s.Directory != nil {
+		for _, sl := range s.Directory.Snapshot() {
+			slots[sl.Token] = sl
+		}
+	}
 	out := []map[string]any{}
 	for _, rec := range page.Items {
-		out = append(out, serializeRecord(rec))
+		out = append(out, s.serializeRecordWithSlot(rec, slots[rec.Token]))
 	}
 	c.JSON(http.StatusOK, gin.H{"tokens": out})
 }
 
-func serializeRecord(rec *account.Record) map[string]any {
+// serializeRecordWithSlot 合并持久化 Record 和内存 Slot 的数据
+// 【修改说明】使用 Slot 的实时 UseCount 和 LastUseAt 替代 Record 中不实时更新的值
+// 同时添加 last_fail_reason 和 last_fail_at 字段供前端显示 401 等错误原因
+func (s *Server) serializeRecordWithSlot(rec *account.Record, slot *account.Slot) map[string]any {
 	qs := rec.QuotaSet()
 	quota := map[string]any{}
 	addQ := func(name string, w *account.QuotaWindow) {
@@ -190,15 +201,35 @@ func serializeRecord(rec *account.Record) map[string]any {
 	addQ("expert", &expert)
 	addQ("heavy", qs.Heavy)
 	addQ("console", qs.Console)
+
+	// 优先使用内存 Slot 的实时数据，fallback 到持久化 Record
+	useCount := rec.UsageUseCount
 	lastUsed := int64(0)
 	if rec.LastUseAt != nil {
 		lastUsed = *rec.LastUseAt
 	}
+	if slot != nil {
+		if slot.UseCount > useCount {
+			useCount = slot.UseCount
+		}
+		if slot.LastUseAt > lastUsed {
+			lastUsed = slot.LastUseAt
+		}
+	}
+
+	lastFailAt := int64(0)
+	if rec.LastFailAt != nil {
+		lastFailAt = *rec.LastFailAt
+	}
+	lastFailReason := ""
+	if rec.LastFailReason != nil {
+		lastFailReason = *rec.LastFailReason
+	}
+
 	pool := rec.Pool
 	if pool == "" {
 		pool = "basic"
 	}
-	// 【修改说明】从 Ext 中提取会员到期时间，供前端显示和编辑
 	membershipExpiresAt := ""
 	if rec.Ext != nil {
 		if v, ok := rec.Ext["membership_expires_at"].(string); ok {
@@ -206,14 +237,16 @@ func serializeRecord(rec *account.Record) map[string]any {
 		}
 	}
 	return map[string]any{
-		"token":                  rec.Token,
-		"pool":                   pool,
-		"status":                 string(rec.Status),
-		"quota":                  quota,
-		"use_count":              rec.UsageUseCount,
-		"last_used_at":           lastUsed,
-		"tags":                   rec.Tags,
-		"membership_expires_at":  membershipExpiresAt,
+		"token":                 rec.Token,
+		"pool":                  pool,
+		"status":                string(rec.Status),
+		"quota":                 quota,
+		"use_count":             useCount,
+		"last_used_at":          lastUsed,
+		"tags":                  rec.Tags,
+		"membership_expires_at": membershipExpiresAt,
+		"last_fail_reason":      lastFailReason,
+		"last_fail_at":          lastFailAt,
 	}
 }
 
@@ -799,6 +832,41 @@ func (s *Server) handleBatchCacheClear(c *gin.Context) {
 		"status":  "success",
 		"results": results,
 	})
+}
+
+// handleTokensRestore 恢复 expired/cooling/disabled 状态的账号为 active
+func (s *Server) handleTokensRestore(c *gin.Context) {
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := readJSON(c, &body); err != nil {
+		writeAppError(c, err)
+		return
+	}
+	tok := platform.SanitizeToken(body.Token)
+	if tok == "" {
+		writeAppError(c, platform.NewAppError("token is required", platform.ErrValidation, "empty_token", 400))
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+	active := account.StatusActive
+	result, err := s.Repo.PatchAccounts(ctx, []account.Patch{
+		{Token: tok, Status: &active, ClearFailures: true},
+	})
+	if err != nil {
+		writeAppError(c, err)
+		return
+	}
+	if result.Patched == 0 {
+		writeAppError(c, platform.NewAppError("token not found", platform.ErrServer, "token_not_found", 404))
+		return
+	}
+	// 同步内存 Directory 中的状态
+	if s.Directory != nil {
+		s.Directory.RestoreToken(tok)
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "success", "token": tok})
 }
 
 func (s *Server) clearTokenAssets(ctx context.Context, token string) (int, error) {

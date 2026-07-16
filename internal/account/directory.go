@@ -345,6 +345,22 @@ func (d *Directory) Release(l *Lease) {
 	}
 }
 
+// RestoreToken 将内存中的账号状态恢复为 active，清除失败计数和冷却状态
+func (d *Directory) RestoreToken(token string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	s, ok := d.slots[token]
+	if !ok {
+		return
+	}
+	s.StatusID = StatusIDActive
+	s.FailCount = 0
+	s.LastFailAt = 0
+	s.Health = 1.0
+	s.CoolingUntil = 0
+	d.reindexLocked(s)
+}
+
 // Feedback applies a request outcome to the reserved account's runtime state.
 func (d *Directory) Feedback(token string, kind FeedbackKind, modeID int, remaining *int, resetAtMs *int64) {
 	d.mu.Lock()

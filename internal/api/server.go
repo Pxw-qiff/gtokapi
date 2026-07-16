@@ -132,6 +132,7 @@ func (s *Server) AdminRouter() *gin.Engine {
 		admin.POST("/batch/nsfw", s.handleBatchNSFW)
 		admin.POST("/batch/refresh", s.handleBatchRefresh)
 		admin.POST("/batch/cache-clear", s.handleBatchCacheClear)
+		admin.POST("/tokens/restore", s.handleTokensRestore)
 		admin.GET("/assets", s.handleAssetsList)
 		admin.POST("/assets/delete-item", s.handleAssetsDeleteItem)
 		admin.POST("/assets/clear-token", s.handleAssetsClearToken)
