@@ -17,6 +17,7 @@ import (
 
 	"github.com/aurora-develop/grok2api/internal/config"
 	"github.com/aurora-develop/grok2api/internal/grok/statsig"
+	"github.com/aurora-develop/grok2api/internal/logger"
 	"github.com/aurora-develop/grok2api/internal/platform"
 )
 
@@ -131,6 +132,8 @@ func statsigID(pathname, method string) string {
 		if v, err := statsigRemoteSign(pathname, method, signerURL); err == nil && v != "" {
 			return v
 		}
+		// 【修改说明】远程签名失败时记录日志，便于排查为何回退到本地计算
+		logger.Warnf("statsig：远程签名失败，回退到本地计算 (path=%s method=%s)", pathname, method)
 	}
 	// Try dynamic pair from HTML (periodic refresh)
 	applyStatsigPairFromHTML()

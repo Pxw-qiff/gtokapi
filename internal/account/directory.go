@@ -161,6 +161,23 @@ func (d *Directory) upsertLocked(rec *Record) {
 	if old, ok := d.slots[rec.Token]; ok {
 		s.Inflight = old.Inflight
 		s.Health = old.Health
+		// 【修改说明】同步时保留内存中的实时统计数据，防止被持久化 Record 的旧值覆盖
+		// 修改背景：feedback 只更新内存 Slot 的 UseCount/LastUseAt/FailCount/LastFailAt，
+		//   不触发持久化。SyncIfChanged 每次从 JSONL 读取 Record（UsageUseCount 始终为 0）
+		//   创建新 Slot，导致内存中已递增的统计数据被重置为 0。
+		// 解决问题：取旧 Slot 和新 Record 的较大值，确保运行时统计不丢失。
+		if old.UseCount > s.UseCount {
+			s.UseCount = old.UseCount
+		}
+		if old.LastUseAt > s.LastUseAt {
+			s.LastUseAt = old.LastUseAt
+		}
+		if old.FailCount > s.FailCount {
+			s.FailCount = old.FailCount
+		}
+		if old.LastFailAt > s.LastFailAt {
+			s.LastFailAt = old.LastFailAt
+		}
 	}
 	d.slots[rec.Token] = s
 	d.reindexLocked(s)

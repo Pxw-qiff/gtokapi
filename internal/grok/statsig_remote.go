@@ -71,12 +71,15 @@ func statsigRemoteSign(pathname, method, signerURL string) (string, error) {
 		return v, nil
 	}
 
+	logger.Infof("远程签名：开始获取 (path=%s method=%s signer=%s)", pathname, method, signerURL)
+
 	// 2. 抓取 metaContent
 	metaContent, err := fetchStatsigMetaContent(context.Background())
 	if err != nil {
 		logger.Warnf("远程签名：抓取 metaContent 失败: %v", err)
 		return "", fmt.Errorf("远程签名：抓取 metaContent 失败: %w", err)
 	}
+	logger.Infof("远程签名：metaContent 已获取 (len=%d)", len(metaContent))
 
 	// 3. 请求签名服务
 	signature, err := requestRemoteSignature(context.Background(), signerURL, method, pathname, metaContent)
@@ -84,6 +87,7 @@ func statsigRemoteSign(pathname, method, signerURL string) (string, error) {
 		logger.Warnf("远程签名：签名服务请求失败 (url=%s, method=%s, path=%s): %v", signerURL, method, pathname, err)
 		return "", fmt.Errorf("远程签名：签名服务请求失败: %w", err)
 	}
+	logger.Infof("远程签名：签名获取成功 (path=%s method=%s sig_len=%d)", pathname, method, len(signature))
 
 	// 4. 写入缓存
 	remoteStatsigSignerInstance.store(cacheKey, signature, time.Now().Add(remoteStatsigCacheTTL))
