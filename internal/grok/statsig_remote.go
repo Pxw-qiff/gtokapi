@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/aurora-develop/grok2api/internal/config"
+	"github.com/aurora-develop/grok2api/internal/logger"
 	tlsclient "github.com/aurora-develop/grok2api/internal/tlsclient"
 )
 
@@ -73,17 +74,20 @@ func statsigRemoteSign(pathname, method, signerURL string) (string, error) {
 	// 2. 抓取 metaContent
 	metaContent, err := fetchStatsigMetaContent(context.Background())
 	if err != nil {
+		logger.Warnf("远程签名：抓取 metaContent 失败: %v", err)
 		return "", fmt.Errorf("远程签名：抓取 metaContent 失败: %w", err)
 	}
 
 	// 3. 请求签名服务
 	signature, err := requestRemoteSignature(context.Background(), signerURL, method, pathname, metaContent)
 	if err != nil {
+		logger.Warnf("远程签名：签名服务请求失败 (url=%s, method=%s, path=%s): %v", signerURL, method, pathname, err)
 		return "", fmt.Errorf("远程签名：签名服务请求失败: %w", err)
 	}
 
 	// 4. 写入缓存
 	remoteStatsigSignerInstance.store(cacheKey, signature, time.Now().Add(remoteStatsigCacheTTL))
+	logger.Infof("远程签名成功: method=%s, path=%s, url=%s", method, pathname, signerURL)
 	return signature, nil
 }
 
