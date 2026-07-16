@@ -123,6 +123,15 @@ func statsigID(pathname, method string) string {
 	if sid := strings.TrimSpace(cfg.GetStr("proxy.clearance.statsig_id", "")); sid != "" {
 		return sid
 	}
+	// 【修改说明】远程签名服务模式：配置了 statsig_signer_url 时优先使用远程签名，
+	// 自动跟进 Grok 算法变化，无需手动更新 seed/HEX。失败时 fallback 到本地计算。
+	// 【修改说明】默认使用远程签名服务，自动跟进 Grok statsig 算法变化。
+	// 可通过配置 proxy.clearance.statsig_signer_url 覆盖，设为空字符串则禁用远程签名回退到本地计算。
+	if signerURL := strings.TrimSpace(cfg.GetStr("proxy.clearance.statsig_signer_url", defaultStatsigSignerURL)); signerURL != "" {
+		if v, err := statsigRemoteSign(pathname, method, signerURL); err == nil && v != "" {
+			return v
+		}
+	}
 	// Try dynamic pair from HTML (periodic refresh)
 	applyStatsigPairFromHTML()
 	// Config override takes precedence over dynamic
